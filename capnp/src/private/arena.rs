@@ -21,10 +21,10 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
-use smallvec::{SmallVec, smallvec};
-#[cfg(feature = "alloc")]
 use core::slice;
 use core::u64;
+#[cfg(feature = "alloc")]
+use smallvec::SmallVec;
 
 use crate::message;
 #[cfg(feature = "alloc")]
