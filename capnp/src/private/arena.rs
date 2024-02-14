@@ -185,7 +185,6 @@ where
 {
     allocator: Option<A>, // None if has already be deallocated.
 
-    // TODO(perf): Try using smallvec to avoid heap allocations in the single-segment case?
     segments: SmallVec<[BuilderSegment; 1]>,
 }
 
