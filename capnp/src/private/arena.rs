@@ -23,6 +23,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use core::slice;
 use core::u64;
+#[cfg(feature = "alloc")]
+use smallvec::SmallVec;
 
 use crate::message;
 #[cfg(feature = "alloc")]
@@ -183,8 +185,7 @@ where
 {
     allocator: Option<A>, // None if has already be deallocated.
 
-    // TODO(perf): Try using smallvec to avoid heap allocations in the single-segment case?
-    segments: Vec<BuilderSegment>,
+    segments: SmallVec<[BuilderSegment; 1]>,
 }
 
 #[cfg(feature = "alloc")]
@@ -204,7 +205,7 @@ where
         Self {
             inner: BuilderArenaImplInner {
                 allocator: Some(allocator),
-                segments: Vec::new(),
+                segments: SmallVec::new(),
             },
         }
     }
