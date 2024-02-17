@@ -669,3 +669,10 @@ impl<T: crate::introspect::Introspect> IntoResult for T {
         Ok::<Self::InnerType, Error>(self)
     }
 }
+
+impl<'a> IntoResult for crate::any_pointer::Reader<'a> {
+    type InnerType = Self;
+    fn into_result(self) -> Result<Self::InnerType> {
+        Ok::<Self::InnerType, Error>(self)
+    }
+}
