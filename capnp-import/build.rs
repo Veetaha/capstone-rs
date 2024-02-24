@@ -15,14 +15,14 @@ use anyhow::bail;
 const CAPNP_VERSION: &str = "2.0-fs";
 
 enum CapnprotoAcquired {
-    Locally(relative_path::RelativePathBuf),
+    Locally(PathBuf),
     OnSystem(PathBuf),
 }
 
 impl Display for CapnprotoAcquired {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CapnprotoAcquired::Locally(e) => write!(f, "{}", e),
+            CapnprotoAcquired::Locally(e) => write!(f, "{}", e.display()),
             CapnprotoAcquired::OnSystem(e) => write!(f, "{}", e.display()),
         }
     }
@@ -90,7 +90,7 @@ fn commandhandle() -> anyhow::Result<tempfile::TempDir> {{
     use std::os::unix::fs::OpenOptionsExt;
     use tempfile::tempdir;
 
-    let file_contents = include_bytes!(\"{}/{}\");
+    let file_contents = include_bytes!(\"{}\");
 
     let tempdir = tempdir()?;
 
@@ -112,7 +112,6 @@ fn commandhandle() -> anyhow::Result<tempfile::TempDir> {{
 
     Ok(tempdir)
 }}",
-            out_dir.to_string_lossy().replace('\\', "/"),
             capnp_path.unwrap(),
         ),
     )?;
@@ -152,13 +151,13 @@ fn build_with_cmake(out_dir: &PathBuf) -> anyhow::Result<CapnprotoAcquired> {
     // place the capnproto binary in $OUT_DIR, next to where binary_decision.rs
     // is intended to go
     if cfg!(target_os = "windows") {
-        Ok(CapnprotoAcquired::Locally(RelativePathBuf::from(
-            "bin/capnp.exe",
-        )))
+        Ok(CapnprotoAcquired::Locally(
+            RelativePathBuf::from("bin/capnp.exe").to_path(out_dir),
+        ))
     } else if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
-        Ok(CapnprotoAcquired::Locally(RelativePathBuf::from(
-            "bin/capnp",
-        )))
+        Ok(CapnprotoAcquired::Locally(
+            RelativePathBuf::from("bin/capnp").to_path(out_dir),
+        ))
     } else {
         panic!("Sorry, capnp-import does not support your operating system.");
     }
