@@ -90,7 +90,7 @@ fn commandhandle() -> anyhow::Result<tempfile::TempDir> {{
     use std::os::unix::fs::OpenOptionsExt;
     use tempfile::tempdir;
 
-    let file_contents = include_bytes!(\"{}\");
+    let file_contents = include_bytes!(r#\"{}\"#);
 
     let tempdir = tempdir()?;
 
