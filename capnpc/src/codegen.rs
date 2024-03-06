@@ -2740,7 +2740,7 @@ fn generate_node(
             ]));
 
             mod_interior.push(Branch(vec![
-                Line(format!("#[allow(async_fn_in_trait)]")),
+                line("#[allow(async_fn_in_trait)]"),
                 Line(format!(
                     "pub trait Server<{}> {} {} {{",
                     params.params, server_base, params.where_clause
