@@ -332,7 +332,7 @@ impl Client {
 /// An untyped server.
 #[cfg(feature = "alloc")]
 pub trait Server {
-    fn dispatch_call(
+    async fn dispatch_call(
         &mut self,
         interface_id: u64,
         method_id: u16,

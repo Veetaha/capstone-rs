@@ -41,7 +41,7 @@ impl ValueImpl {
 }
 
 impl calculator::value::Server for ValueImpl {
-    fn read(
+    async fn read(
         &mut self,
         _params: calculator::value::ReadParams,
         mut results: calculator::value::ReadResults,
@@ -107,7 +107,7 @@ impl FunctionImpl {
 }
 
 impl calculator::function::Server for FunctionImpl {
-    fn call(
+    async fn call(
         &mut self,
         params: calculator::function::CallParams,
         mut results: calculator::function::CallResults,
@@ -138,7 +138,7 @@ pub struct OperatorImpl {
 }
 
 impl calculator::function::Server for OperatorImpl {
-    fn call(
+    async fn call(
         &mut self,
         params: calculator::function::CallParams,
         mut results: calculator::function::CallResults,
@@ -162,7 +162,7 @@ impl calculator::function::Server for OperatorImpl {
 struct CalculatorImpl;
 
 impl calculator::Server for CalculatorImpl {
-    fn evaluate(
+    async fn evaluate(
         &mut self,
         params: calculator::EvaluateParams,
         mut results: calculator::EvaluateResults,
@@ -175,7 +175,7 @@ impl calculator::Server for CalculatorImpl {
             Ok(())
         })
     }
-    fn def_function(
+    async fn def_function(
         &mut self,
         params: calculator::DefFunctionParams,
         mut results: calculator::DefFunctionResults,
@@ -188,7 +188,7 @@ impl calculator::Server for CalculatorImpl {
             ))));
         Promise::ok(())
     }
-    fn get_operator(
+    async fn get_operator(
         &mut self,
         params: calculator::GetOperatorParams,
         mut results: calculator::GetOperatorResults,

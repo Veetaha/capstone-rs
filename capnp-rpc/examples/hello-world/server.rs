@@ -30,7 +30,7 @@ use std::net::ToSocketAddrs;
 struct HelloWorldImpl;
 
 impl hello_world::Server for HelloWorldImpl {
-    fn say_hello(
+    async fn say_hello(
         &mut self,
         params: hello_world::SayHelloParams,
         mut results: hello_world::SayHelloResults,

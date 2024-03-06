@@ -33,12 +33,12 @@ struct TestInterfaceImpl {
 
 #[capnproto_rpc(test_interface)]
 impl test_interface::Server for TestInterfaceImpl {
-    fn set_value(&mut self, value: u64) {
+    async fn set_value(&mut self, value: u64) {
         self.value = value;
         Promise::ok(())
     }
 
-    fn get_value(&mut self) {
+    async fn get_value(&mut self) {
         let mut rresult = results.get();
         capnp_build!(rresult, { value = self.value });
         Promise::ok(())

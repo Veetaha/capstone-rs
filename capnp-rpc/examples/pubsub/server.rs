@@ -86,7 +86,7 @@ impl PublisherImpl {
 }
 
 impl publisher::Server<::capnp::text::Owned> for PublisherImpl {
-    fn subscribe(
+    async fn subscribe(
         &mut self,
         params: publisher::SubscribeParams<::capnp::text::Owned>,
         mut results: publisher::SubscribeResults<::capnp::text::Owned>,

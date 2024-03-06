@@ -59,7 +59,7 @@ impl TestInterfaceImpl {
 }
 
 impl test_interface::Server for TestInterfaceImpl {
-    fn foo(
+    async fn foo(
         &mut self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
@@ -263,7 +263,7 @@ impl Bootstrap {
 }
 
 impl test_capnp::bootstrap::Server for Bootstrap {
-    fn test_interface(
+    async fn test_interface(
         &mut self,
         _params: test_capnp::bootstrap::TestInterfaceParams,
         mut results: test_capnp::bootstrap::TestInterfaceResults,

@@ -29,7 +29,7 @@ use futures::AsyncReadExt;
 pub struct PowerFunction;
 
 impl calculator::function::Server for PowerFunction {
-    fn call(
+    async fn call(
         &mut self,
         params: calculator::function::CallParams,
         mut results: calculator::function::CallResults,
