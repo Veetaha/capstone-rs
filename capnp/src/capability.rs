@@ -329,6 +329,7 @@ impl Client {
     }
 }
 
+#[allow(async_fn_in_trait)]
 /// An untyped server.
 #[cfg(feature = "alloc")]
 pub trait Server {
