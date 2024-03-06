@@ -371,12 +371,14 @@ where
                 // We put this borrow_mut() inside a block to avoid a potential
                 // double borrow during f.await
                 let server = &mut *inner.borrow_mut();
-                server.dispatch_call(
-                    interface_id,
-                    method_id,
-                    ::capnp::capability::Params::new(params),
-                    ::capnp::capability::Results::new(results),
-                ).await
+                server
+                    .dispatch_call(
+                        interface_id,
+                        method_id,
+                        ::capnp::capability::Params::new(params),
+                        ::capnp::capability::Results::new(results),
+                    )
+                    .await
             };
             f.await
         })
