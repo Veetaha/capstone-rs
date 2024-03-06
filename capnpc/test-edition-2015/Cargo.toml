@@ -1,0 +1,22 @@
+[package]
+
+name = "capnpc-test-edition-2015"
+version = "0.0.0"
+build = "build.rs"
+edition = "2015"
+
+[lib]
+
+name = "capnpc_test_edition_2015"
+path = "test.rs"
+
+[build-dependencies]
+capnpc.workspace = true
+capnp-import.workspace = true
+tempfile.workspace = true
+anyhow.workspace = true
+
+[dependencies]
+capnp.workspace = true
+capnpc.workspace = true
+external-crate = { path = "../test/external-crate" }

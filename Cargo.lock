@@ -309,18 +309,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnpc-test-edition-2015"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "capnp",
- "capnp-import",
- "capnpc",
- "external-crate",
- "tempfile",
-]
-
-[[package]]
 name = "capnpc-test-edition-2018"
 version = "0.0.0"
 dependencies = [
