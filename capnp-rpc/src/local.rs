@@ -377,10 +377,9 @@ where
                         method_id,
                         ::capnp::capability::Params::new(params),
                         ::capnp::capability::Results::new(results),
-                    )
-                    .await
+                    ).await
             };
-            f.await
+            f
         })
     }
 

@@ -339,7 +339,7 @@ pub trait Server {
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> Promise<(), Error>;
+    ) -> Result<(), Error>;
 }
 
 /// Trait to track the relationship between generated Server traits and Client structs.

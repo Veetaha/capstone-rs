@@ -63,11 +63,11 @@ impl test_interface::Server for TestInterfaceImpl {
         &mut self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Promise<(), Error> {
+    ) -> Result<(), Error> {
         if let Some(err) = self.inner.borrow().error.as_ref() {
-            return Promise::err(err.clone());
+            return Err(err.clone());
         }
-        let params = pry!(params.get());
+        let params = params.get()?;
         let s = format!(
             "{} {} {}",
             params.get_i(),
@@ -79,9 +79,11 @@ impl test_interface::Server for TestInterfaceImpl {
             results.set_x(s[..].into());
         }
         if let Some(fut) = self.inner.borrow().block.as_ref() {
-            Promise::from_future(fut.clone())
+            //Promise::from_future(fut.clone())
+            //TODO Hmmm
+            fut.clone().await
         } else {
-            Promise::ok(())
+            Ok(())
         }
     }
 }
@@ -267,12 +269,12 @@ impl test_capnp::bootstrap::Server for Bootstrap {
         &mut self,
         _params: test_capnp::bootstrap::TestInterfaceParams,
         mut results: test_capnp::bootstrap::TestInterfaceResults,
-    ) -> Promise<(), Error> {
+    ) -> Result<(), Error> {
         if let Some(client) = self.0.borrow_mut().take() {
             results.get().set_cap(client);
-            Promise::ok(())
+            Ok(())
         } else {
-            Promise::err(Error::failed("No interface available".into()))
+            Err(Error::failed("No interface available".into()))
         }
     }
 }
