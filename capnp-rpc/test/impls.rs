@@ -254,23 +254,28 @@ impl test_pipeline::Server for TestPipeline {
         let mut request = cap.foo_request();
         request.get().set_i(123);
         request.get().set_j(true);
-        //TODO Hmmm
-        request.send().promise.map(move |response| {
-            if response?.get()?.get_x()? != "foo" {
-                return Err(Error::failed("expected x to equal 'foo'".to_string()));
-            }
 
-            results.get().set_s("bar".into());
+        request
+            .send()
+            .promise
+            .map(move |response| {
+                if response?.get()?.get_x()? != "foo" {
+                    return Err(Error::failed("expected x to equal 'foo'".to_string()));
+                }
 
-            // TODO implement better casting
-            results
-                .get()
-                .init_out_box()
-                .set_cap(test_interface::Client {
-                    client: capnp_rpc::new_client::<test_extends::Client, _>(TestExtends).client,
-                });
-            Ok(())
-        }).await
+                results.get().set_s("bar".into());
+
+                // TODO implement better casting
+                results
+                    .get()
+                    .init_out_box()
+                    .set_cap(test_interface::Client {
+                        client: capnp_rpc::new_client::<test_extends::Client, _>(TestExtends)
+                            .client,
+                    });
+                Ok(())
+            })
+            .await
     }
 
     async fn get_null_cap(
@@ -348,14 +353,18 @@ impl test_more_stuff::Server for TestMoreStuff {
         let mut request = cap.foo_request();
         request.get().set_i(123);
         request.get().set_j(true);
-        //TODO hmm
-        request.send().promise.map(move |response| {
-            if response?.get()?.get_x()? != "foo" {
-                return Err(Error::failed("expected x to equal 'foo'".to_string()));
-            }
-            results.get().set_s("bar".into());
-            Ok(())
-        }).await
+
+        request
+            .send()
+            .promise
+            .map(move |response| {
+                if response?.get()?.get_x()? != "foo" {
+                    return Err(Error::failed("expected x to equal 'foo'".to_string()));
+                }
+                results.get().set_s("bar".into());
+                Ok(())
+            })
+            .await
     }
 
     async fn call_foo_when_resolved(
@@ -365,19 +374,22 @@ impl test_more_stuff::Server for TestMoreStuff {
     ) -> Result<(), Error> {
         self.call_count += 1;
         let cap = params.get()?.get_cap()?;
-        //TODO Hmm
-        cap.client.when_resolved().and_then(move |()| {
-            let mut request = cap.foo_request();
-            request.get().set_i(123);
-            request.get().set_j(true);
-            request.send().promise.map(move |response| {
-                if response?.get()?.get_x()? != "foo" {
-                    return Err(Error::failed("expected x to equal 'foo'".to_string()));
-                }
-                results.get().set_s("bar".into());
-                Ok(())
+
+        cap.client
+            .when_resolved()
+            .and_then(move |()| {
+                let mut request = cap.foo_request();
+                request.get().set_i(123);
+                request.get().set_j(true);
+                request.send().promise.map(move |response| {
+                    if response?.get()?.get_x()? != "foo" {
+                        return Err(Error::failed("expected x to equal 'foo'".to_string()));
+                    }
+                    results.get().set_s("bar".into());
+                    Ok(())
+                })
             })
-        }).await
+            .await
     }
 
     async fn never_return(
@@ -398,7 +410,6 @@ impl test_more_stuff::Server for TestMoreStuff {
         // Also attach `cap` to the result struct so we can make sure that the results are released.
         results.get().set_cap_copy(cap);
 
-        //TODO Hmmm
         promise.await
     }
 
@@ -437,15 +448,19 @@ impl test_more_stuff::Server for TestMoreStuff {
                     params.set_i(123);
                     params.set_j(true);
                 }
-                //TODO Hmmm
-                request.send().promise.map(move |response| {
-                    if response?.get()?.get_x()? != "foo" {
-                        Err(Error::failed("expected X to equal 'foo'".to_string()))
-                    } else {
-                        results.get().set_s("bar".into());
-                        Ok(())
-                    }
-                }).await
+
+                request
+                    .send()
+                    .promise
+                    .map(move |response| {
+                        if response?.get()?.get_x()? != "foo" {
+                            Err(Error::failed("expected X to equal 'foo'".to_string()))
+                        } else {
+                            results.get().set_s("bar".into());
+                            Ok(())
+                        }
+                    })
+                    .await
             }
         }
     }
@@ -533,8 +548,9 @@ impl test_more_stuff::Server for TestMoreStuff {
             results.push(request.send().promise);
         }
 
-        //TODO Hmmm
-        ::futures::future::try_join_all(results).map_ok(|_| ()).await
+        ::futures::future::try_join_all(results)
+            .map_ok(|_| ())
+            .await
     }
 }
 
@@ -651,13 +667,12 @@ impl test_capability_server_set::Server for TestCapabilityServerSet {
     ) -> Result<(), Error> {
         let set = self.set.clone();
         let handle = params.get()?.get_handle()?;
-        
+
         let resolved = capnp::capability::get_resolved_cap(handle).await;
         match set.borrow().get_local_server_of_resolved(&resolved) {
             None => (),
             Some(_) => results.get().set_is_ours(true),
         }
         Ok(())
-    
     }
 }

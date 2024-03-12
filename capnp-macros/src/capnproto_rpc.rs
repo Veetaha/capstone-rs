@@ -44,8 +44,7 @@ fn process_signature(namespace: TokenStream2, sig: Signature) -> Signature {
     inputs.push(params);
     inputs.push(result);
 
-    let output: syn::ReturnType =
-        syn::parse_quote!(-> ::capnp::capability::Promise<(), ::capnp::Error>);
+    let output: syn::ReturnType = syn::parse_quote!(-> Result<(), ::capnp::Error>);
 
     Signature {
         inputs,
@@ -57,7 +56,7 @@ fn process_signature(namespace: TokenStream2, sig: Signature) -> Signature {
 fn process_block(block: Block, args: Vec<syn::FnArg>) -> Block {
     let Block { mut stmts, .. } = block;
     let rparams_stmt: syn::Stmt = syn::parse_quote! {
-        let rparams = ::capnp_rpc::pry!(params.get());
+        let rparams = params.get()?;
     };
 
     let idents = args.into_iter().map(|x| match x {

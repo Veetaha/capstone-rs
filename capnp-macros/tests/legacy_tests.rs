@@ -26,7 +26,7 @@ async fn capnp_let_test() -> capnp::Result<()> {
     let person_message = get_person_message();
     let person: person_capnp::Reader = person_message.get_root_as_reader()?;
 
-    fn capnp_let_test_impl(person: person_capnp::Reader) -> Promise<(), capnp::Error> {
+    fn capnp_let_test_impl(person: person_capnp::Reader) -> Result<(), capnp::Error> {
         capnp_let!(
             {name, birthdate: {year_as_text: year, month}, email: contact_email} = person
         );
@@ -36,17 +36,17 @@ async fn capnp_let_test() -> capnp::Result<()> {
         assert_eq!(contact_email, "tom@gmail.com");
         // `birthdate` as a Reader is also in scope
         assert_eq!(birthdate.get_day(), 1);
-        Promise::ok(())
+        Ok(())
     }
 
-    capnp_let_test_impl(person).await
+    capnp_let_test_impl(person)
 }
 
 #[tokio::test]
 async fn capnp_build_test() -> capnp::Result<()> {
     fn legacy_struct_test_closure(
         mut person_builder: person_capnp::Builder,
-    ) -> Promise<(), capnp::Error> {
+    ) -> Result<(), capnp::Error> {
         capnp_build!(person_builder, {
             birthdate => |mut birthdate_builder: example_capnp::date::Builder | {
                     let day = 1;
@@ -61,12 +61,12 @@ async fn capnp_build_test() -> capnp::Result<()> {
         capnp_let!({birthdate: {month, year_as_text}} = person_reader);
         assert_eq!(month, 2);
         assert_eq!(year_as_text, "1990");
-        Promise::ok(())
+        Ok(())
     }
 
     let mut message = capnp::message::Builder::new_default();
     let person_builder = message.init_root::<person_capnp::Builder>();
-    legacy_struct_test_closure(person_builder).await?;
+    legacy_struct_test_closure(person_builder)?;
 
     fn structlist_tests_impl(mut date_list: date_list::Builder) -> Promise<(), capnp::Error> {
         let v = vec![(1, 2, "3"), (4, 5, "6"), (7, 8, "9")].into_iter();

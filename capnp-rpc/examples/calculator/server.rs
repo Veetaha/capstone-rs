@@ -122,7 +122,9 @@ impl calculator::function::Server for FunctionImpl {
         }
 
         let eval = evaluate_impl(
-            self.body.get_root::<calculator::expression::Builder>()?.into_reader(),
+            self.body
+                .get_root::<calculator::expression::Builder>()?
+                .into_reader(),
             Some(params),
         );
         results.get().set_value(eval.await?);
@@ -180,7 +182,7 @@ impl calculator::Server for CalculatorImpl {
             .get()
             .set_func(capnp_rpc::new_client(FunctionImpl::new(
                 params.get()?.get_param_count() as u32,
-                params.get()?.get_body()?
+                params.get()?.get_body()?,
             )?));
         Ok(())
     }
