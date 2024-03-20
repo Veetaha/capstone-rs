@@ -19,3 +19,4 @@ workspace = true
 [dependencies]
 capnp-futures.workspace = true
 capnp.workspace = true
+tokio.workspace = true

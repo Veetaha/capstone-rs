@@ -105,6 +105,37 @@ impl<T, E> Future for Promise<T, E> {
     }
 }
 
+//Minimal version of futures::future::Either for dispatch_call_internal() without allocating a Box
+pub enum Either<A, B> {
+    A(A),
+    B(B)
+}
+impl<A, B> Future for Either<A, B>
+where
+    A: Future,
+    B: Future<Output = A::Output>,
+{
+    type Output = A::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        match self.as_pin_mut() {
+            Either::A(x) => x.poll(cx),
+            Either::B(x) => x.poll(cx),
+        }
+    }
+    
+}
+impl <A, B>Either<A, B> {
+    pub fn as_pin_mut(self: Pin<&mut Self>) -> Either<Pin<&mut A>, Pin<&mut B>> {
+        unsafe {
+            match *Pin::get_unchecked_mut(self) {
+                Either::A(ref mut inner) => Either::A(Pin::new_unchecked(inner)),
+                Either::B(ref mut inner) => Either::B(Pin::new_unchecked(inner)),
+            }
+        }
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[cfg(feature = "rpc_try")]
 impl<T> core::ops::Try for Promise<T, crate::Error> {
@@ -329,17 +360,17 @@ impl Client {
     }
 }
 
-#[allow(async_fn_in_trait)]
 /// An untyped server.
 #[cfg(feature = "alloc")]
 pub trait Server {
-    async fn dispatch_call(
+    fn dispatch_call(
         &mut self,
+        rc: std::rc::Rc<std::cell::RefCell<Self>>,
         interface_id: u64,
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> Result<(), Error>;
+    ) -> Promise<(), Error>;
 }
 
 /// Trait to track the relationship between generated Server traits and Client structs.

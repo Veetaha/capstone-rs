@@ -13,6 +13,7 @@ use futures::executor::LocalPool;
 use futures::future::Shared;
 use futures::task::LocalSpawnExt;
 use futures::FutureExt;
+use tokio;
 
 use crate::spawn;
 use crate::test_capnp::{self, test_interface};
@@ -59,11 +60,11 @@ impl TestInterfaceImpl {
 }
 
 impl test_interface::Server for TestInterfaceImpl {
-    async fn foo(
+    fn foo(
         &mut self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Result<(), Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
         if let Some(err) = self.inner.borrow().error.as_ref() {
             return Err(err.clone());
         }
@@ -79,11 +80,11 @@ impl test_interface::Server for TestInterfaceImpl {
             results.set_x(s[..].into());
         }
         if let Some(fut) = self.inner.borrow().block.as_ref() {
-            //Promise::from_future(fut.clone())
+            Ok(fut.clone())
             //TODO Hmmm
-            fut.clone().await
+            //fut.clone().await
         } else {
-            Ok(())
+            Ok(Promise::<(), capnp::Error>::ok(()).shared())
         }
     }
 }
@@ -265,14 +266,14 @@ impl Bootstrap {
 }
 
 impl test_capnp::bootstrap::Server for Bootstrap {
-    async fn test_interface(
+    fn test_interface(
         &mut self,
         _params: test_capnp::bootstrap::TestInterfaceParams,
         mut results: test_capnp::bootstrap::TestInterfaceResults,
-    ) -> Result<(), Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
         if let Some(client) = self.0.borrow_mut().take() {
             results.get().set_cap(client);
-            Ok(())
+            Ok(async {Ok(())})
         } else {
             Err(Error::failed("No interface available".into()))
         }
