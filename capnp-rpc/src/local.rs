@@ -368,19 +368,16 @@ where
         // This currently relies on the task scheduler being first-in-first-out.
         let inner = self.inner.clone();
         Promise::from_future(async move {
-            let f = {
-                // We put this borrow_mut() inside a block to avoid a potential
-                // double borrow during f.await
-                //let mut server = &mut *inner.borrow_mut();
-                let mut server = unsafe { &mut (*inner.as_ptr()) };
-                server.dispatch_call(
-                    interface_id,
-                    method_id,
-                    ::capnp::capability::Params::new(params),
-                    ::capnp::capability::Results::new(results),
-                )
-            };
-            f?.await
+            let mut server = inner.borrow_mut();
+
+            let f = server.dispatch_call(
+                interface_id,
+                method_id,
+                ::capnp::capability::Params::new(params),
+                ::capnp::capability::Results::new(results),
+            )?;
+
+            f.await
         })
     }
 
