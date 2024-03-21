@@ -64,7 +64,7 @@ impl test_interface::Server for TestInterfaceImpl {
         &mut self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'static, Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
         if let Some(err) = self.inner.borrow().error.as_ref() {
             return Err(err.clone());
         }
@@ -270,7 +270,7 @@ impl test_capnp::bootstrap::Server for Bootstrap {
         &mut self,
         _params: test_capnp::bootstrap::TestInterfaceParams,
         mut results: test_capnp::bootstrap::TestInterfaceResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'static, Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
         if let Some(client) = self.0.borrow_mut().take() {
             results.get().set_cap(client);
             Ok(async { Ok(()) })

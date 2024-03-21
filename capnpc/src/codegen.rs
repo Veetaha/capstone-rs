@@ -2571,7 +2571,7 @@ fn generate_node(
                 )));
                 server_interior.push(
                     Line(fmt!(ctx,
-                        "fn {}(&mut self, _: {}Params<{}>, _: {}Results<{}>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{ Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
+                        "fn {}<'a>(&'a mut self, _: {}Params<{}>, _: {}Results<{}>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{ Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
                         module_name(name),
                         capitalize_first_letter(name), params_ty_params,
                         capitalize_first_letter(name), results_ty_params,
