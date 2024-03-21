@@ -367,14 +367,21 @@ where
         // TODO: actually use some kind of queue here to guarantee that call order in maintained.
         // This currently relies on the task scheduler being first-in-first-out.
         let inner = self.inner.clone();
-        let mut server = inner.borrow_mut();
-        server.dispatch_call(
-                self.inner.clone(),
-                interface_id,
-                method_id,
-                ::capnp::capability::Params::new(params),
-                ::capnp::capability::Results::new(results),
-            )
+        Promise::from_future(async move {
+            let f = {
+                // We put this borrow_mut() inside a block to avoid a potential
+                // double borrow during f.await
+                //let mut server = &mut *inner.borrow_mut();
+                let mut server = unsafe{&mut (*inner.as_ptr())};
+                server.dispatch_call(
+                    interface_id,
+                    method_id,
+                    ::capnp::capability::Params::new(params),
+                    ::capnp::capability::Results::new(results),
+                )
+            };
+            f?.await
+        })
     }
 
     fn get_ptr(&self) -> usize {

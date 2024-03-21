@@ -363,14 +363,13 @@ impl Client {
 /// An untyped server.
 #[cfg(feature = "alloc")]
 pub trait Server {
-    fn dispatch_call(
-        &mut self,
-        rc: std::rc::Rc<std::cell::RefCell<Self>>,
+    fn dispatch_call<'a>(
+        &'a mut self,
         interface_id: u64,
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> Promise<(), Error>;
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error>;
 }
 
 /// Trait to track the relationship between generated Server traits and Client structs.
