@@ -30,18 +30,19 @@ use std::net::ToSocketAddrs;
 struct HelloWorldImpl;
 
 impl hello_world::Server for HelloWorldImpl {
-    async fn say_hello(
+    fn say_hello(
         &mut self,
         params: hello_world::SayHelloParams,
         mut results: hello_world::SayHelloResults,
-    ) -> Result<(), ::capnp::Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'static, capnp::Error>
+    {
         let request = params.get()?.get_request()?;
         let name = request.get_name()?.to_str()?;
         let message = format!("Hello, {name}!");
 
         results.get().init_reply().set_message(message[..].into());
 
-        Ok(())
+        Ok(async { Ok(()) })
     }
 }
 

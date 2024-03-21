@@ -86,11 +86,11 @@ impl PublisherImpl {
 }
 
 impl publisher::Server<::capnp::text::Owned> for PublisherImpl {
-    async fn subscribe(
+    fn subscribe(
         &mut self,
         params: publisher::SubscribeParams<::capnp::text::Owned>,
         mut results: publisher::SubscribeResults<::capnp::text::Owned>,
-    ) -> Result<(), ::capnp::Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>>, capnp::Error> {
         println!("subscribe");
         self.subscribers.borrow_mut().subscribers.insert(
             self.next_id,
@@ -108,7 +108,7 @@ impl publisher::Server<::capnp::text::Owned> for PublisherImpl {
             )));
 
         self.next_id += 1;
-        Ok(())
+        Ok(async { Ok(()) })
     }
 }
 

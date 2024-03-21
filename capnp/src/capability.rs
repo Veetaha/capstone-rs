@@ -109,7 +109,7 @@ impl<T, E> Future for Promise<T, E> {
 #[cfg(feature = "alloc")]
 pub enum Either<A, B> {
     A(A),
-    B(B)
+    B(B),
 }
 #[cfg(feature = "alloc")]
 impl<A, B> Future for Either<A, B>
@@ -125,10 +125,9 @@ where
             Either::B(x) => x.poll(cx),
         }
     }
-    
 }
 #[cfg(feature = "alloc")]
-impl <A, B>Either<A, B> {
+impl<A, B> Either<A, B> {
     pub fn as_pin_mut(self: Pin<&mut Self>) -> Either<Pin<&mut A>, Pin<&mut B>> {
         unsafe {
             match *Pin::get_unchecked_mut(self) {

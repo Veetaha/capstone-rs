@@ -2785,7 +2785,7 @@ fn generate_node(
                 ]),
                 line("}"),
             ]));
-            
+
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
@@ -2809,17 +2809,17 @@ fn generate_node(
                     line("}"),
                     ]));
 
-                    let params_with_lifetimes = {
-                        let mut params_with_lifetimes = String::new();
-                        for char in params.params.chars() {
-                            if char == ',' {
-                                params_with_lifetimes.push_str(": 'a");
-                            }
-                            params_with_lifetimes.push(char);
-                        }
+            let params_with_lifetimes = {
+                let mut params_with_lifetimes = String::new();
+                for char in params.params.chars() {
+                    if char == ',' {
                         params_with_lifetimes.push_str(": 'a");
-                        params_with_lifetimes
-                    };
+                    }
+                    params_with_lifetimes.push(char);
+                }
+                params_with_lifetimes.push_str(": 'a");
+                params_with_lifetimes
+            };
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
@@ -2834,16 +2834,14 @@ fn generate_node(
                     indent(indent(indent(Line(fmt!(ctx,"_ =>  Ok({either_string_base}::capnp::capability::Either::B(async{{Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string()))}})){either_brackets_base} "))))),
                     indent(indent(line("}"))),
                     indent(line("}")),
-                    line("}")])); 
+                    line("}")]));
 
-                    
-                    if either_brackets.len() == 0 {
-                        either_string.push_str("::capnp::capability::Either::<std::future::Ready<Result<(), capnp::Error>>,_>::B(");
-                        either_brackets.push_str(")");
-                    } else {
-                        either_string.push_str("::capnp::capability::Either::B(");
-                        
-                    }
+            if either_brackets.len() == 0 {
+                either_string.push_str("::capnp::capability::Either::<std::future::Ready<Result<(), capnp::Error>>,_>::B(");
+                either_brackets.push_str(")");
+            } else {
+                either_string.push_str("::capnp::capability::Either::B(");
+            }
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
@@ -2851,7 +2849,7 @@ fn generate_node(
                     } else {
                         line("impl <'a, _T :Server + 'a> ServerDispatch<_T> {")
                     }),
-                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(server: &'a mut _T, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + '_, {capnp}::Error> {{"))),
+                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(server: &'a mut _T, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + 'a, {capnp}::Error> {{"))),
                     indent(indent(indent(line("match method_id {")))),
                     indent(indent(indent(indent(dispatch_arms)))),
                     indent(indent(indent(indent(Line(fmt!(ctx,"_ => Ok({either_string}async{{Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string()))}}){either_brackets} ")))))),

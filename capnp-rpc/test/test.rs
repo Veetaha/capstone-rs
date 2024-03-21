@@ -40,7 +40,7 @@ fn canceled_to_error(_e: futures::channel::oneshot::Canceled) -> Error {
 }
 
 #[test]
-fn drop_rpc_system() { 
+fn drop_rpc_system() {
     let (writer, reader) = async_byte_channel::channel();
 
     let network = Box::new(twoparty::VatNetwork::new(
