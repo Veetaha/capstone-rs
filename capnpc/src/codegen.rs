@@ -2505,7 +2505,7 @@ fn generate_node(
                 if ordinal != 0 {
                     either_string.push_str("::capnp::capability::Either::B(");
                 }
-                either_brackets.push_str(")");
+                either_brackets.push(')');
 
                 let param_id = method.get_param_struct_type();
                 let param_node = &ctx.node_map[&param_id];
@@ -2621,7 +2621,7 @@ fn generate_node(
                 find_super_interfaces(interface, &mut extends, ctx)?;
                 for interface in &extends {
                     either_string_base.push_str("::capnp::capability::Either::B(");
-                    either_brackets_base.push_str(")");
+                    either_brackets_base.push(')');
 
                     let type_id = interface.get_id();
                     let brand = interface.get_brand()?;
@@ -2836,9 +2836,9 @@ fn generate_node(
                     indent(line("}")),
                     line("}")]));
 
-            if either_brackets.len() == 0 {
+            if either_brackets.is_empty() {
                 either_string.push_str("::capnp::capability::Either::<std::future::Ready<Result<(), capnp::Error>>,_>::B(");
-                either_brackets.push_str(")");
+                either_brackets.push(')');
             } else {
                 either_string.push_str("::capnp::capability::Either::B(");
             }

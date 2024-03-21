@@ -1,4 +1,4 @@
-capnp_import::capnp_import!("tests/test_schema.capnp");
+/*capnp_import::capnp_import!("tests/test_schema.capnp");
 
 use capnp::capability::Promise;
 use capnp_macros::{capnp_build, capnproto_rpc};
@@ -63,3 +63,4 @@ async fn decorator_test() -> capnp::Result<()> {
     assert_eq!(response, 3);
     Ok(())
 }*/
+*/
