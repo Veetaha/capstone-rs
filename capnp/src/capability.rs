@@ -106,10 +106,12 @@ impl<T, E> Future for Promise<T, E> {
 }
 
 //Minimal version of futures::future::Either for dispatch_call_internal() without allocating a Box
+#[cfg(feature = "alloc")]
 pub enum Either<A, B> {
     A(A),
     B(B)
 }
+#[cfg(feature = "alloc")]
 impl<A, B> Future for Either<A, B>
 where
     A: Future,
@@ -125,6 +127,7 @@ where
     }
     
 }
+#[cfg(feature = "alloc")]
 impl <A, B>Either<A, B> {
     pub fn as_pin_mut(self: Pin<&mut Self>) -> Either<Pin<&mut A>, Pin<&mut B>> {
         unsafe {
