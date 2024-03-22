@@ -2827,7 +2827,7 @@ fn generate_node(
                     } else {
                         Line(fmt!(ctx,"impl <_T: Server> {capnp}::capability::Server for ServerDispatch<_T> {{"))
                     }),
-                    indent(Line(fmt!(ctx,"fn dispatch_call(&mut self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{"))),
+                    indent(Line(fmt!(ctx,"fn dispatch_call<'a>(&'a mut self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{"))),
                     indent(indent(line("match interface_id {"))),
                     indent(indent(indent(line("_private::TYPE_ID => Ok(::capnp::capability::Either::A(Self::dispatch_call_internal(&mut self.server, method_id, params, results)?)),")))),
                     indent(indent(indent(base_dispatch_arms))),
