@@ -81,8 +81,6 @@ impl test_interface::Server for TestInterfaceImpl {
         }
         if let Some(fut) = self.inner.borrow().block.as_ref() {
             Ok(fut.clone())
-            //TODO Hmmm
-            //fut.clone().await
         } else {
             Ok(Promise::<(), capnp::Error>::ok(()).shared())
         }
