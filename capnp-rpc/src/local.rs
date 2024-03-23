@@ -371,8 +371,8 @@ where
             let f = {
                 // We put this borrow_mut() inside a block to avoid a potential
                 // double borrow during f.await
-                //let mut server = inner.borrow_mut();
-                let server = unsafe { inner.as_ptr().as_mut().unwrap() };
+                //let mut server = &mut inner.borrow_mut();
+                let server = unsafe { &mut (*inner.as_ptr()) };
                 server.dispatch_call(
                     interface_id,
                     method_id,

@@ -2571,7 +2571,7 @@ fn generate_node(
                 )));
                 server_interior.push(
                     Line(fmt!(ctx,
-                        "fn {}<'a>(&'a mut self, _: {}Params<{}>, _: {}Results<{}>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{ Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
+                        "fn {}<'a, 'b>(&'a mut self, _: {}Params<{}>, _: {}Results<{}>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + 'b, {capnp}::Error> {{ Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
                         module_name(name),
                         capitalize_first_letter(name), params_ty_params,
                         capitalize_first_letter(name), results_ty_params,
@@ -2808,7 +2808,7 @@ fn generate_node(
                     indent(line("fn deref_mut(&mut self) -> &mut _T { &mut self.server}")),
                     line("}"),
                     ]));
-
+            /*
             let params_with_lifetimes = {
                 let mut params_with_lifetimes = String::new();
                 for char in params.params.chars() {
@@ -2819,7 +2819,7 @@ fn generate_node(
                 }
                 params_with_lifetimes.push_str(": 'a");
                 params_with_lifetimes
-            };
+            };*/
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
@@ -2827,7 +2827,7 @@ fn generate_node(
                     } else {
                         Line(fmt!(ctx,"impl <_T: Server> {capnp}::capability::Server for ServerDispatch<_T> {{"))
                     }),
-                    indent(Line(fmt!(ctx,"fn dispatch_call<'a>(&'a mut self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{"))),
+                    indent(Line(fmt!(ctx,"fn dispatch_call(&mut self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{"))),
                     indent(indent(line("match interface_id {"))),
                     indent(indent(indent(line("_private::TYPE_ID => Ok(::capnp::capability::Either::A(Self::dispatch_call_internal(&mut self.server, method_id, params, results)?)),")))),
                     indent(indent(indent(base_dispatch_arms))),
@@ -2845,11 +2845,11 @@ fn generate_node(
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
-                        Line(format!("impl <'a, {}, _T: Server{} + 'a> ServerDispatch<_T,{}> {} {{", params_with_lifetimes, bracketed_params, params.params, params.where_clause))
+                        Line(format!("impl <{}, _T: Server{}> ServerDispatch<_T,{}> {} {{", params.params, bracketed_params, params.params, params.where_clause))
                     } else {
-                        line("impl <'a, _T :Server + 'a> ServerDispatch<_T> {")
+                        line("impl <_T :Server> ServerDispatch<_T> {")
                     }),
-                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(server: &'a mut _T, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + 'a, {capnp}::Error> {{"))),
+                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal<'a>(server: &'a mut _T, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + 'a, {capnp}::Error> {{"))),
                     indent(indent(indent(line("match method_id {")))),
                     indent(indent(indent(indent(dispatch_arms)))),
                     indent(indent(indent(indent(Line(fmt!(ctx,"_ => Ok({either_string}async{{Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string()))}}){either_brackets} ")))))),

@@ -1,4 +1,4 @@
-/*capnp_import::capnp_import!("tests/test_schema.capnp");
+capnp_import::capnp_import!("tests/test_schema.capnp");
 
 use capnp::capability::Promise;
 use capnp_macros::{capnp_build, capnproto_rpc};
@@ -30,18 +30,18 @@ use test_schema_capnp::test_interface;
 struct TestInterfaceImpl {
     value: u64,
 }
-/*
+
 #[capnproto_rpc(test_interface)]
 impl test_interface::Server for TestInterfaceImpl {
-    async fn set_value(&mut self, value: u64) {
+    fn set_value<'b>(&mut self, value: u64) {
         self.value = value;
-        Ok(())
+        Ok(async { Ok(()) })
     }
 
-    async fn get_value(&mut self) {
+    fn get_value<'b>(&mut self) {
         let mut rresult = results.get();
         capnp_build!(rresult, { value = self.value });
-        Ok(())
+        Ok(async { Ok(()) })
     }
 }
 
@@ -62,5 +62,4 @@ async fn decorator_test() -> capnp::Result<()> {
     let response = response.get()?.get_value();
     assert_eq!(response, 3);
     Ok(())
-}*/
-*/
+}
