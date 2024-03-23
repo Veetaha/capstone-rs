@@ -31,7 +31,7 @@ default-members = ["capnp", "capnp-import"]
 [workspace.package]
 version = "0.18.0"
 edition = "2021"
-rust-version = "1.65.0"
+rust-version = "1.75.0"
 license = "MIT"
 repository = "https://github.com/fundament-software/capnproto-rust"
 documentation = "https://docs.rs/capnp/"
