@@ -119,7 +119,7 @@ where
 {
     type Output = A::Output;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
         match self.as_pin_mut() {
             Either::A(x) => x.poll(cx),
             Either::B(x) => x.poll(cx),
@@ -371,7 +371,7 @@ pub trait Server {
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error>;
+    ) -> Result<impl core::future::Future<Output = Result<(), Error>>, Error>;
 }
 
 /// Trait to track the relationship between generated Server traits and Client structs.
