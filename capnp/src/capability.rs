@@ -105,6 +105,39 @@ impl<T, E> Future for Promise<T, E> {
     }
 }
 
+//Minimal version of futures::future::Either for dispatch_call_internal() without allocating a Box
+#[cfg(feature = "alloc")]
+pub enum Either<A, B> {
+    A(A),
+    B(B),
+}
+#[cfg(feature = "alloc")]
+impl<A, B> Future for Either<A, B>
+where
+    A: Future,
+    B: Future<Output = A::Output>,
+{
+    type Output = A::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> Poll<Self::Output> {
+        match self.as_pin_mut() {
+            Either::A(x) => x.poll(cx),
+            Either::B(x) => x.poll(cx),
+        }
+    }
+}
+#[cfg(feature = "alloc")]
+impl<A, B> Either<A, B> {
+    pub fn as_pin_mut(self: Pin<&mut Self>) -> Either<Pin<&mut A>, Pin<&mut B>> {
+        unsafe {
+            match *Pin::get_unchecked_mut(self) {
+                Either::A(ref mut inner) => Either::A(Pin::new_unchecked(inner)),
+                Either::B(ref mut inner) => Either::B(Pin::new_unchecked(inner)),
+            }
+        }
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[cfg(feature = "rpc_try")]
 impl<T> core::ops::Try for Promise<T, crate::Error> {
@@ -338,7 +371,7 @@ pub trait Server {
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> Promise<(), Error>;
+    ) -> Result<impl core::future::Future<Output = Result<(), Error>>, Error>;
 }
 
 /// Trait to track the relationship between generated Server traits and Client structs.

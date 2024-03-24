@@ -2481,6 +2481,10 @@ fn generate_node(
             let mut mod_interior = Vec::new();
             let mut dispatch_arms = Vec::new();
             let mut private_mod_interior = Vec::new();
+            let mut either_string = String::new();
+            let mut either_brackets = String::new();
+            let mut either_string_base = String::new();
+            let mut either_brackets_base = String::new();
 
             let bracketed_params = if params.params.is_empty() {
                 "".to_string()
@@ -2494,10 +2498,13 @@ fn generate_node(
             )));
 
             mod_interior.push(line("#![allow(unused_variables)]"));
-
             let methods = interface.get_methods()?;
             for (ordinal, method) in methods.into_iter().enumerate() {
                 let name = method.get_name()?.to_str()?;
+                if ordinal != 0 {
+                    either_string.push_str("::capnp::capability::Either::B(");
+                }
+                either_brackets.push(')');
 
                 let param_id = method.get_param_struct_type();
                 let param_node = &ctx.node_map[&param_id];
@@ -2545,7 +2552,7 @@ fn generate_node(
 
                 dispatch_arms.push(
                     Line(fmt!(ctx,
-                        "{ordinal} => server.{}({capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::internal_get_typed_results(results)),",
+                        "{ordinal} => Ok({either_string}::capnp::capability::Either::A(server.{}({capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::internal_get_typed_results(results))?{either_brackets}),",
                         module_name(name))));
                 mod_interior.push(Line(fmt!(
                     ctx,
@@ -2563,7 +2570,7 @@ fn generate_node(
                 )));
                 server_interior.push(
                     Line(fmt!(ctx,
-                        "fn {}(&mut self, _: {}Params<{}>, _: {}Results<{}>) -> {capnp}::capability::Promise<(), {capnp}::Error> {{ {capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
+                        "fn {}<'a, 'b>(&'a mut self, _: {}Params<{}>, _: {}Results<{}>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + 'b, {capnp}::Error> {{ Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err({capnp}::Error::unimplemented(\"method {}::Server::{} not implemented\".to_string())) }}",
                         module_name(name),
                         capitalize_first_letter(name), params_ty_params,
                         capitalize_first_letter(name), results_ty_params,
@@ -2587,7 +2594,6 @@ fn generate_node(
             }
 
             let mut base_dispatch_arms = Vec::new();
-
             let server_base = {
                 let mut base_traits = Vec::new();
 
@@ -2613,12 +2619,15 @@ fn generate_node(
                 let mut extends = Vec::new();
                 find_super_interfaces(interface, &mut extends, ctx)?;
                 for interface in &extends {
+                    either_string_base.push_str("::capnp::capability::Either::B(");
+                    either_brackets_base.push(')');
+
                     let type_id = interface.get_id();
                     let brand = interface.get_brand()?;
                     let the_mod = ctx.get_qualified_module(type_id);
 
                     base_dispatch_arms.push(Line(format!(
-                        "0x{type_id:x} => {}::dispatch_call_internal(&mut self.server, method_id, params, results),",
+                        "0x{type_id:x} => Ok({either_string_base}::capnp::capability::Either::A({}::dispatch_call_internal(&mut self.server, method_id, params, results)?{either_brackets_base})),",
                         do_branding(
                             ctx, type_id, brand, Leaf::ServerDispatch, &the_mod)?)));
                     base_traits.push(do_branding(ctx, type_id, brand, Leaf::Server, &the_mod)?);
@@ -2740,6 +2749,7 @@ fn generate_node(
             ]));
 
             mod_interior.push(Branch(vec![
+                line("#[allow(async_fn_in_trait)]"),
                 Line(format!(
                     "pub trait Server<{}> {} {} {{",
                     params.params, server_base, params.where_clause
@@ -2805,15 +2815,21 @@ fn generate_node(
                     } else {
                         Line(fmt!(ctx,"impl <_T: Server> {capnp}::capability::Server for ServerDispatch<_T> {{"))
                     }),
-                    indent(Line(fmt!(ctx,"fn dispatch_call(&mut self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> {capnp}::capability::Promise<(), {capnp}::Error> {{"))),
+                    indent(Line(fmt!(ctx,"fn dispatch_call(&mut self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>>, {capnp}::Error> {{"))),
                     indent(indent(line("match interface_id {"))),
-                    indent(indent(indent(line("_private::TYPE_ID => Self::dispatch_call_internal(&mut self.server, method_id, params, results),")))),
+                    indent(indent(indent(line("_private::TYPE_ID => Ok(::capnp::capability::Either::A(Self::dispatch_call_internal(&mut self.server, method_id, params, results)?)),")))),
                     indent(indent(indent(base_dispatch_arms))),
-                    indent(indent(indent(Line(fmt!(ctx,"_ => {{ {capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())) }}"))))),
+                    indent(indent(indent(Line(fmt!(ctx,"_ =>  Ok({either_string_base}::capnp::capability::Either::B(async{{Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string()))}})){either_brackets_base} "))))),
                     indent(indent(line("}"))),
                     indent(line("}")),
                     line("}")]));
 
+            if either_brackets.is_empty() {
+                either_string.push_str("::capnp::capability::Either::<std::future::Ready<Result<(), capnp::Error>>,_>::B(");
+                either_brackets.push(')');
+            } else {
+                either_string.push_str("::capnp::capability::Either::B(");
+            }
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
@@ -2821,10 +2837,10 @@ fn generate_node(
                     } else {
                         line("impl <_T :Server> ServerDispatch<_T> {")
                     }),
-                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(server: &mut _T, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> {capnp}::capability::Promise<(), {capnp}::Error> {{"))),
-                    indent(indent(line("match method_id {"))),
-                    indent(indent(indent(dispatch_arms))),
-                    indent(indent(indent(Line(fmt!(ctx,"_ => {{ ::capnp::capability::Promise::err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())) }}"))))),
+                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal<'a>(server: &'a mut _T, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> Result<impl std::future::Future<Output = Result<(), {capnp}::Error>> + 'a, {capnp}::Error> {{"))),
+                    indent(indent(indent(line("match method_id {")))),
+                    indent(indent(indent(indent(dispatch_arms)))),
+                    indent(indent(indent(indent(Line(fmt!(ctx,"_ => Ok({either_string}async{{Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string()))}}){either_brackets} ")))))),
                     indent(indent(line("}"))),
                     indent(line("}")),
                     line("}")]));

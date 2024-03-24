@@ -13,6 +13,7 @@ use futures::executor::LocalPool;
 use futures::future::Shared;
 use futures::task::LocalSpawnExt;
 use futures::FutureExt;
+use tokio;
 
 use crate::spawn;
 use crate::test_capnp::{self, test_interface};
@@ -59,15 +60,15 @@ impl TestInterfaceImpl {
 }
 
 impl test_interface::Server for TestInterfaceImpl {
-    fn foo(
+    fn foo<'b>(
         &mut self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Promise<(), Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
         if let Some(err) = self.inner.borrow().error.as_ref() {
-            return Promise::err(err.clone());
+            return Err(err.clone());
         }
-        let params = pry!(params.get());
+        let params = params.get()?;
         let s = format!(
             "{} {} {}",
             params.get_i(),
@@ -79,9 +80,9 @@ impl test_interface::Server for TestInterfaceImpl {
             results.set_x(s[..].into());
         }
         if let Some(fut) = self.inner.borrow().block.as_ref() {
-            Promise::from_future(fut.clone())
+            Ok(fut.clone())
         } else {
-            Promise::ok(())
+            Ok(Promise::<(), capnp::Error>::ok(()).shared())
         }
     }
 }
@@ -263,16 +264,16 @@ impl Bootstrap {
 }
 
 impl test_capnp::bootstrap::Server for Bootstrap {
-    fn test_interface(
+    fn test_interface<'b>(
         &mut self,
         _params: test_capnp::bootstrap::TestInterfaceParams,
         mut results: test_capnp::bootstrap::TestInterfaceResults,
-    ) -> Promise<(), Error> {
+    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
         if let Some(client) = self.0.borrow_mut().take() {
             results.get().set_cap(client);
-            Promise::ok(())
+            Ok(async { Ok(()) })
         } else {
-            Promise::err(Error::failed("No interface available".into()))
+            Err(Error::failed("No interface available".into()))
         }
     }
 }

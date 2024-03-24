@@ -15,6 +15,7 @@ capnp-rpc.workspace = true
 capnp.workspace = true
 futures.workspace = true
 async-byte-channel.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 capnp-import.workspace = true

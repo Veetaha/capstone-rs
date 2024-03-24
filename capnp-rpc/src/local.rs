@@ -370,13 +370,15 @@ where
             let f = {
                 // We put this borrow_mut() inside a block to avoid a potential
                 // double borrow during f.await
-                let server = &mut *inner.borrow_mut();
+
+                //TODO Placeholder unsafe until rust 2024 edition
+                let server = unsafe { &mut (*inner.as_ptr()) };
                 server.dispatch_call(
                     interface_id,
                     method_id,
                     ::capnp::capability::Params::new(params),
                     ::capnp::capability::Results::new(results),
-                )
+                )?
             };
             f.await
         })

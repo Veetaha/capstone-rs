@@ -59,7 +59,7 @@ pub trait ClientHook {
         method_id: u16,
         params: Box<dyn ParamsHook>,
         results: Box<dyn ResultsHook>,
-    ) -> crate::capability::Promise<(), crate::Error>;
+    ) -> Promise<(), crate::Error>;
 
     /// If this capability is associated with an rpc connection, then this method
     /// returns an identifier for that connection.

@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use capnp::capability::Promise;
 use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use crate::hello_world_capnp::hello_world;
@@ -30,18 +29,19 @@ use std::net::ToSocketAddrs;
 struct HelloWorldImpl;
 
 impl hello_world::Server for HelloWorldImpl {
-    fn say_hello(
+    fn say_hello<'b>(
         &mut self,
         params: hello_world::SayHelloParams,
         mut results: hello_world::SayHelloResults,
-    ) -> Promise<(), ::capnp::Error> {
-        let request = pry!(pry!(params.get()).get_request());
-        let name = pry!(pry!(request.get_name()).to_str());
+    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
+    {
+        let request = params.get()?.get_request()?;
+        let name = request.get_name()?.to_str()?;
         let message = format!("Hello, {name}!");
 
         results.get().init_reply().set_message(message[..].into());
 
-        Promise::ok(())
+        Ok(async { Ok(()) })
     }
 }
 

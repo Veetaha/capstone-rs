@@ -1,6 +1,5 @@
 capnp_import::capnp_import!("tests/test_schema.capnp");
 
-use capnp::capability::Promise;
 use capnp_macros::{capnp_build, capnproto_rpc};
 use test_schema_capnp::test_interface;
 
@@ -35,13 +34,13 @@ struct TestInterfaceImpl {
 impl test_interface::Server for TestInterfaceImpl {
     fn set_value(&mut self, value: u64) {
         self.value = value;
-        Promise::ok(())
+        Ok(async { Ok(()) })
     }
 
     fn get_value(&mut self) {
         let mut rresult = results.get();
         capnp_build!(rresult, { value = self.value });
-        Promise::ok(())
+        Ok(async { Ok(()) })
     }
 }
 
