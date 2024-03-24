@@ -46,9 +46,13 @@ fn process_signature(namespace: TokenStream2, sig: Signature) -> Signature {
 
     let output: syn::ReturnType = syn::parse_quote!(-> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>);
 
+    let mut generics = sig.generics.clone();
+    generics.params.push_value(syn::parse_quote!('b));
+
     Signature {
         inputs,
         output,
+        generics,
         ..sig
     }
 }
