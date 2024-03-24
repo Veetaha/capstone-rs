@@ -27,10 +27,9 @@ use capnp::Error;
 use capnp::{any_pointer, message};
 
 use futures::channel::oneshot;
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 
 use std::cell::RefCell;
-use std::ops::Add;
 use std::rc::Rc;
 
 pub trait ResultsDoneHook {
@@ -371,7 +370,8 @@ where
             let f = {
                 // We put this borrow_mut() inside a block to avoid a potential
                 // double borrow during f.await
-                //let mut server = &mut inner.borrow_mut();
+
+                //TODO Placeholder unsafe until rust 2024 edition
                 let server = unsafe { &mut (*inner.as_ptr()) };
                 server.dispatch_call(
                     interface_id,
@@ -404,193 +404,3 @@ where
         crate::rpc::default_when_resolved_impl(self)
     }
 }
-/*
-struct Stuff {
-    thing: u8
-}
-fn bs() {
-    let stuff = Rc::new(RefCell::new(Stuff{thing: 0}));
-    let pointer = stuff.borrow_mut();
-    let inside = &pointer.thing;
-    drop(pointer);
-    print!("{inside}");
-}*/
-/*
-async fn m() -> Result<(), Error> {
-    dispatch(false).await
-}
-
-async fn dispatch(i: bool) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>>>> {
-    match i {
-        false => do_some_async(),
-        true => unimplemented_error()
-    }
-}
-
-async fn unimplemented_error() -> Result<(), Error> {
-    Err(Error::unimplemented("Method not implemented".to_string()))
-}
-
-async fn dispatch_int() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), Error>>>> {
-    do_some_async()
-}
-
-async fn do_some_async() -> Result<(), Error> {
-    todo!()
-}*/
-/*
-async fn m() -> Result<(), Error> {
-    dispatch(false).await
-}
-
-fn dispatch(i: bool) -> Pin<Box<dyn std::future::Future<Output = Result<(), Error>>>> {
-    match i {
-        false => dispatch_int(),
-        true => Box::pin(async { Err(Error::unimplemented("Method not implemented".to_string()))})
-    }
-}
-
-fn unimplemented_error() -> impl std::future::Future<Output = Result<(), Error>> {
-    async {Err(Error::unimplemented("Method not implemented".to_string()))}
-}
-
-fn dispatch_int() -> Pin<Box<dyn std::future::Future<Output = Result<(), Error>>>> {
-    Box::pin(do_some_async())
-}*/
-//type E = impl std::future::Future<Output = Result<(), Error>>;
-/*
-struct F_E {
-    error: impl std::future::Future<Output = Result<(), Error>>,
-}*/
-struct Stuff {
-    thing: u8,
-    ref_cell_thing: RefCell<u8>,
-}
-impl Stuff {
-    //Originally self is a &mut... actually it's a &mut reference into a ref cell, async fn makes the lifetime of self as long as the future's
-    //So two concurrent calls or similar cause a double borrow
-    async fn async_fn(
-        self: Rc<Self>,
-        params: Result<(), Error>,
-        fake: impl futures::Future<Output = i8>,
-    ) -> Result<(), Error> {
-        let hmm = params?;
-        //do stuff that doesn't need &mut
-
-        let number = self.thing.add(1);
-        //do stuff that requires mut
-        let inner = self.ref_cell_thing.borrow_mut();
-        //fake.await;
-        drop(inner);
-        //Dropping ref cells before .await points should work, or could use locks/atomics for places that require them
-        todo!()
-    }
-    //More or less equivalent to the Promise implementation in how it's executed, annoyingly two async fn's or impl trait instances with the same output type
-    //don't return the same type so either Pin<Box dyn future or a generated enum that implements poll is needed for dispatch
-    fn returning_custom_future(
-        &mut self,
-        params: Result<(), Error>,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
-        //Do some sync stuff
-        let hmm = params?;
-        self.thing = 0;
-        //Either put immediate result in here or create a custom future to be ran
-        Ok(async { todo!() })
-    }
-    fn returning_custom(
-        &mut self,
-        params: Result<(), Error>,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
-        //Do some sync stuff
-        let hmm = params?;
-        self.thing = 0;
-        //Either put immediate result in here or create a custom future to be ran
-        Ok(async { todo!() })
-    } /*
-      fn test(&mut self, i: bool) -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
-          match i {
-              true => self.returning_custom_future(Result::Ok(())),
-              false => self.returning_custom(Result::Ok(()))
-          }
-      }*/
-    //Would have worked nice but ? can't call into future or be used to convert from Result<(), impl future<R, E>> to impl future<R, E>
-    //Which would only make it usable in an async{} block, but if you move self into the async block you end up with the same double borrow issues as async fn
-    //This can be done on nightly with custom try(Or just implement ? for Promise)
-    fn returning_custom_future_without_random_result_for_no_reason(
-        &mut self,
-        params: Result<(), Error>,
-    ) -> impl std::future::Future<Output = Result<(), Error>> {
-        //let hmm = params?;
-        async { todo!() }
-    }
-
-    //fn hmm() -> Result<impl std::future::Future<Output = (), impl std::future::Future Error>> {
-
-    //}
-}
-/*
-fn hmmmmm(r: Result<(), capnp::Error>) -> Result<impl std::future::Future<Output = ()>, impl std::future::Future<Output = capnp::Error>> {
-    let i = r?;
-    //return Err(capnp::Error::failed("".to_string()));
-    Ok(async{()})
-
-}
-fn hmm2(r: Result<(), capnp::Error>) -> impl std::future::Future<Output = Result<(), capnp::Error>> {
-    let i = r?;
-    //return Err(capnp::Error::failed("".to_string()));
-    async{Ok(())}
-
-}*/
-#[test]
-fn test_size() {
-    println!(
-        "{}",
-        std::mem::size_of::<Result<Promise<(), Error>, Error>>()
-    );
-    println!(
-        "{}",
-        std::mem::size_of::<Result<Promise<(), Error>, Error>>()
-    );
-    //println!("{}", std::mem::size_of::<Result<impl std::future::Future<Output = Result<(), Error>>, Error>>());
-    println!("{}", std::mem::size_of_val(&nothing()));
-}
-
-fn nothing() -> Result<impl std::future::Future<Output = Result<(), Error>>, Error> {
-    Ok(async { todo!() })
-}
-/*
-fn stuff(r: Result<(), Error>) -> Promise<(), Error> {
-    r?;
-    todo!()
-}*/
-/*
-async fn m() -> Result<(), Error> {
-    dispatch(false).await
-}
-
-fn dispatch(i: bool) -> impl std::future::Future<Output = Result<(), Error>> {
-    /*match i {
-        false => dispatch_int(),
-        true => Box::pin(async { Err(Error::unimplemented("Method not implemented".to_string()))})
-    }*/
-    dispatch_int()
-}
-
-fn unimplemented_error() -> impl std::future::Future<Output = Result<(), Error>> {
-    async {Err(Error::unimplemented("Method not implemented".to_string()))}
-}
-
-fn dispatch_int() -> impl std::future::Future<Output = Result<(), Error>>{
-    do_some_async()
-}
-
-
-
-struct rc {
-
-}
-impl rc {
-    async fn do_some_async(&mut self) -> Result<(), Error> {
-        todo!()
-    }
-}*/

@@ -2498,7 +2498,6 @@ fn generate_node(
             )));
 
             mod_interior.push(line("#![allow(unused_variables)]"));
-            //methods.iter();
             let methods = interface.get_methods()?;
             for (ordinal, method) in methods.into_iter().enumerate() {
                 let name = method.get_name()?.to_str()?;
@@ -2789,9 +2788,9 @@ fn generate_node(
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
-                        Line(format!("impl <{}, _T: Server{} + 'static> ::core::ops::Deref for ServerDispatch<_T,{}> {} {{", params.params, bracketed_params, params.params, params.where_clause))
+                        Line(format!("impl <{}, _T: Server{}> ::core::ops::Deref for ServerDispatch<_T,{}> {} {{", params.params, bracketed_params, params.params, params.where_clause))
                     } else {
-                        line("impl <_T: Server + 'static> ::core::ops::Deref for ServerDispatch<_T> {")
+                        line("impl <_T: Server> ::core::ops::Deref for ServerDispatch<_T> {")
                     }),
                     indent(line("type Target = _T;")),
                     indent(line("fn deref(&self) -> &_T { &self.server}")),
@@ -2801,25 +2800,14 @@ fn generate_node(
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
-                        Line(format!("impl <{}, _T: Server{} + 'static> ::core::ops::DerefMut for ServerDispatch<_T,{}> {} {{", params.params, bracketed_params, params.params, params.where_clause))
+                        Line(format!("impl <{}, _T: Server{}> ::core::ops::DerefMut for ServerDispatch<_T,{}> {} {{", params.params, bracketed_params, params.params, params.where_clause))
                     } else {
-                        line("impl <_T: Server + 'static> ::core::ops::DerefMut for ServerDispatch<_T> {")
+                        line("impl <_T: Server> ::core::ops::DerefMut for ServerDispatch<_T> {")
                     }),
                     indent(line("fn deref_mut(&mut self) -> &mut _T { &mut self.server}")),
                     line("}"),
                     ]));
-            /*
-            let params_with_lifetimes = {
-                let mut params_with_lifetimes = String::new();
-                for char in params.params.chars() {
-                    if char == ',' {
-                        params_with_lifetimes.push_str(": 'a");
-                    }
-                    params_with_lifetimes.push(char);
-                }
-                params_with_lifetimes.push_str(": 'a");
-                params_with_lifetimes
-            };*/
+
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
