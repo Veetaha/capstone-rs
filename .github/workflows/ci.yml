@@ -88,16 +88,16 @@ jobs:
             sudo update-alternatives --install /usr/bin/cc cc /usr/bin/clang-15 60
 
       - name: Test default features
-        run: cargo miri test --package capnp --package capnpc-test
+        run: cargo miri test --package capstone --package capnpc-test
 
       - name: Test no default features
-        run: cargo miri test --package capnp --package capnpc-test --no-default-features
+        run: cargo miri test --package capstone --package capnpc-test --no-default-features
 
       - name: Test sync_reader
-        run: cargo miri test --package capnp --package capnpc-test --features sync_reader
+        run: cargo miri test --package capstone --package capnpc-test --features sync_reader
 
       - name: Test unaligned
-        run: cargo miri test --package capnp --package capnpc-test --features unaligned
+        run: cargo miri test --package capstone --package capnpc-test --features unaligned
 
   minrust:
     name: minrust
@@ -131,7 +131,7 @@ jobs:
           cd ../
 
     - name: Run tests
-      run: cargo test -p capnp -p capnpc -p capnp-futures -p capnp-rpc
+      run: cargo test -p capstone -p capstone-gen -p capstone-futures -p capstone-rpc
 
   fmt:
     name: formatting
