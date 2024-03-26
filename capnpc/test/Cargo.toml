@@ -12,12 +12,12 @@ name = "capnpc_test"
 path = "test.rs"
 
 [build-dependencies]
-capnpc.workspace = true
-capnp-import.workspace = true
+capstone-gen.workspace = true
+capstone-import.workspace = true
 tempfile.workspace = true
 anyhow.workspace = true
 
 [dependencies]
-capnp.workspace = true
-capnpc.workspace = true
+capstone.workspace = true
+capstone-gen.workspace = true
 external-crate = { path = "./external-crate" }

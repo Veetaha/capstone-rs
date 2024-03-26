@@ -33,21 +33,30 @@ version = "0.18.0"
 edition = "2021"
 rust-version = "1.75.0"
 license = "MIT"
-repository = "https://github.com/fundament-software/capnproto-rust"
-documentation = "https://docs.rs/capnp/"
+repository = "https://github.com/fundament-software/capstone-rs"
+documentation = "https://docs.rs/capstone/"
 readme = "README.md"
 
 [workspace.dependencies]
-tokio = { version = "1.0.0", features = ["net", "rt", "rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1.0.0", features = [
+    "net",
+    "rt",
+    "rt-multi-thread",
+    "macros",
+    "sync",
+] }
 tokio-util = { version = "0.7.4", features = ["compat"] }
-capnp = { version = "0.18.0", path = "./capnp" }
-capnpc = { version = "0.18.0", path = "./capnpc" }
-capnp-rpc = { version = "0.18.0", path = "./capnp-rpc" }
-capnp-import = { version = "0.18.0", path = "./capnp-import" }
-capnp-macros = { version = "0.18.0", path = "./capnp-macros" }
-capnp-futures = { version = "0.18.0", path = "./capnp-futures" }
+capstone = { version = "0.18.0", path = "./capnp" }
+capstone-gen = { version = "0.18.0", path = "./capnpc" }
+capstone-rpc = { version = "0.18.0", path = "./capnp-rpc" }
+capstone-import = { version = "0.18.0", path = "./capnp-import" }
+capstone-macros = { version = "0.18.0", path = "./capnp-macros" }
+capstone-futures = { version = "0.18.0", path = "./capnp-futures" }
 async-byte-channel = { path = "./async-byte-channel" }
-futures = { version = "0.3.0", default-features = false, features = ["std", "async-await"] }
+futures = { version = "0.3.0", default-features = false, features = [
+    "std",
+    "async-await",
+] }
 syn = { version = "2.0", features = ["full"] }
 proc-macro2 = "1.0"
 quote = "1.0"

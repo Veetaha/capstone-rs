@@ -1,15 +1,18 @@
 [package]
-name = "capnpc"
+name = "capstone-gen"
 version.workspace = true
 authors = ["David Renshaw <dwrenshaw@gmail.com>"]
 license.workspace = true
 description = "Cap'n Proto code generation"
 repository.workspace = true
-documentation = "https://docs.rs/capnpc/"
+documentation = "https://docs.rs/capstone-gen/"
 edition.workspace = true
 readme = "README.md"
 
 keywords = ["encoding", "protocol", "serialization"]
+
+[lib]
+name = "capnpc"
 
 [[bin]]
 
@@ -22,5 +25,5 @@ name = "capnpc-rust-bootstrap"
 path = "src/capnpc-rust-bootstrap.rs"
 
 
-[dependencies.capnp]
+[dependencies.capstone]
 workspace = true

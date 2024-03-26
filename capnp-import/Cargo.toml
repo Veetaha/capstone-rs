@@ -1,9 +1,9 @@
 [package]
-name = "capnp-import"
+name = "capstone-import"
 version.workspace = true
 authors = ["Erik McClure <erikm@fundament.software>"]
 description = """
-Fetches official Cap-n-Proto compiler (capnp) releases and automatically compiles all capnp files in a set of folders, then combines them in a single capnp_include.rs file.
+Compiles the Fundament capstone fork of capnproto into a usable executable.
 """
 categories = ["compilers", "development-tools::build-utils", "parsing"]
 
@@ -12,17 +12,18 @@ documentation.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 readme.workspace = true
-homepage = "https://github.com/fundament-software/capnp-import"
+homepage = "https://github.com/fundament-software/capstone-import"
 license.workspace = true
 debug = true
 
 [lib]
+name = "capnp_import"
 proc-macro = true
 
 [dependencies]
 anyhow.workspace = true
-capnpc.workspace = true
-capnp.workspace = true
+capstone-gen.workspace = true
+capstone.workspace = true
 convert_case = "0.6"
 proc-macro2.workspace = true
 quote.workspace = true

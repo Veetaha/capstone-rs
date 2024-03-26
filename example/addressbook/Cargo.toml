@@ -11,5 +11,5 @@ name = "addressbook"
 path = "addressbook.rs"
 
 [dependencies]
-capnp-import.workspace = true
-capnp.workspace = true
+capstone-import.workspace = true
+capstone.workspace = true

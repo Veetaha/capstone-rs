@@ -11,11 +11,11 @@ name = "capnp_rpc_test"
 path = "test.rs"
 
 [dependencies]
-capnp-rpc.workspace = true
-capnp.workspace = true
+capstone-rpc.workspace = true
+capstone.workspace = true
 futures.workspace = true
 async-byte-channel.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-capnp-import.workspace = true
+capstone-import.workspace = true

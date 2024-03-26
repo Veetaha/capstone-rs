@@ -15,16 +15,16 @@ dependencies = [
 name = "addressbook"
 version = "0.0.0"
 dependencies = [
- "capnp",
- "capnp-import",
+ "capstone",
+ "capstone-import",
 ]
 
 [[package]]
 name = "addressbook_send"
 version = "0.0.0"
 dependencies = [
- "capnp",
- "capnp-import",
+ "capstone",
+ "capstone-import",
 ]
 
 [[package]]
@@ -109,8 +109,8 @@ checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 name = "benchmark"
 version = "0.0.0"
 dependencies = [
- "capnp",
- "capnp-import",
+ "capstone",
+ "capstone-import",
 ]
 
 [[package]]
@@ -197,16 +197,75 @@ dependencies = [
 name = "calculator"
 version = "0.0.0"
 dependencies = [
- "capnp",
- "capnp-import",
- "capnp-rpc",
+ "capstone",
+ "capstone-import",
+ "capstone-rpc",
  "futures",
  "tokio",
  "tokio-util",
 ]
 
 [[package]]
-name = "capnp"
+name = "capnp-futures-test"
+version = "0.0.0"
+dependencies = [
+ "async-byte-channel",
+ "capstone",
+ "capstone-futures",
+ "capstone-import",
+ "futures",
+]
+
+[[package]]
+name = "capnp-rpc-test"
+version = "0.0.0"
+dependencies = [
+ "async-byte-channel",
+ "capstone",
+ "capstone-import",
+ "capstone-rpc",
+ "futures",
+ "tokio",
+]
+
+[[package]]
+name = "capnpc-test"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "capstone",
+ "capstone-gen",
+ "capstone-import",
+ "external-crate",
+ "tempfile",
+]
+
+[[package]]
+name = "capnpc-test-edition-2018"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "capstone",
+ "capstone-gen",
+ "capstone-import",
+ "external-crate",
+ "tempfile",
+]
+
+[[package]]
+name = "capnpc-test-edition-2021"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "capstone",
+ "capstone-gen",
+ "capstone-import",
+ "external-crate",
+ "tempfile",
+]
+
+[[package]]
+name = "capstone"
 version = "0.18.0"
 dependencies = [
  "embedded-io",
@@ -215,32 +274,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-futures"
+name = "capstone-futures"
 version = "0.18.0"
 dependencies = [
- "capnp",
+ "capstone",
  "futures",
  "quickcheck",
 ]
 
 [[package]]
-name = "capnp-futures-test"
-version = "0.0.0"
+name = "capstone-gen"
+version = "0.18.0"
 dependencies = [
- "async-byte-channel",
- "capnp",
- "capnp-futures",
- "capnp-import",
- "futures",
+ "capstone",
 ]
 
 [[package]]
-name = "capnp-import"
+name = "capstone-import"
 version = "0.18.0"
 dependencies = [
  "anyhow",
- "capnp",
- "capnpc",
+ "capstone",
+ "capstone-gen",
  "cmake",
  "convert_case",
  "proc-macro2",
@@ -256,12 +311,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-macros"
+name = "capstone-macros"
 version = "0.18.0"
 dependencies = [
- "capnp",
- "capnp-import",
- "capnp-rpc",
+ "capstone",
+ "capstone-import",
+ "capstone-rpc",
  "convert_case",
  "proc-macro2",
  "quote",
@@ -270,68 +325,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnp-rpc"
+name = "capstone-rpc"
 version = "0.18.0"
 dependencies = [
- "capnp",
- "capnp-futures",
+ "capstone",
+ "capstone-futures",
  "futures",
  "tokio",
-]
-
-[[package]]
-name = "capnp-rpc-test"
-version = "0.0.0"
-dependencies = [
- "async-byte-channel",
- "capnp",
- "capnp-import",
- "capnp-rpc",
- "futures",
- "tokio",
-]
-
-[[package]]
-name = "capnpc"
-version = "0.18.0"
-dependencies = [
- "capnp",
-]
-
-[[package]]
-name = "capnpc-test"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "capnp",
- "capnp-import",
- "capnpc",
- "external-crate",
- "tempfile",
-]
-
-[[package]]
-name = "capnpc-test-edition-2018"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "capnp",
- "capnp-import",
- "capnpc",
- "external-crate",
- "tempfile",
-]
-
-[[package]]
-name = "capnpc-test-edition-2021"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "capnp",
- "capnp-import",
- "capnpc",
- "external-crate",
- "tempfile",
 ]
 
 [[package]]
@@ -529,9 +529,9 @@ name = "external-crate"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "capnp",
- "capnp-import",
- "capnpc",
+ "capstone",
+ "capstone-gen",
+ "capstone-import",
  "tempfile",
 ]
 
@@ -545,8 +545,8 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 name = "fill_random_values"
 version = "0.0.0"
 dependencies = [
- "capnp",
- "capnp-import",
+ "capstone",
+ "capstone-import",
  "rand",
 ]
 
@@ -735,9 +735,9 @@ checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 name = "hello-world"
 version = "0.0.0"
 dependencies = [
- "capnp",
- "capnp-import",
- "capnp-rpc",
+ "capstone",
+ "capstone-import",
+ "capstone-rpc",
  "futures",
  "tokio",
  "tokio-util",
@@ -1171,9 +1171,9 @@ dependencies = [
 name = "pubsub"
 version = "0.1.0"
 dependencies = [
- "capnp",
- "capnp-import",
- "capnp-rpc",
+ "capstone",
+ "capstone-import",
+ "capstone-rpc",
  "futures",
  "tokio",
  "tokio-util",

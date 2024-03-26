@@ -16,5 +16,5 @@ name = "run_all_benchmarks"
 path = "run_all.rs"
 
 [dependencies]
-capnp.workspace = true
-capnp-import.workspace = true
+capstone.workspace = true
+capstone-import.workspace = true

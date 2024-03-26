@@ -10,8 +10,8 @@ members = ["."]
 [dependencies]
 wasmer = "4.0.0"
 
-[dependencies.capnp]
-path = "../../capnp"
+[dependencies.capstone]
+path = "../../capstone"
 
-[dependencies.capnp-import]
-path = "../../capnp-import"
+[dependencies.capstone-import]
+path = "../../capstone-import"

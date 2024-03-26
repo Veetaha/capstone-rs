@@ -24,9 +24,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::pubsub_capnp::{publisher, subscriber, subscription};
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
-
-use capnp::capability::Promise;
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use futures::{AsyncReadExt, FutureExt, StreamExt};
 
