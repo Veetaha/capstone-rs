@@ -1,6 +1,6 @@
 [package]
 
-name = "capnp"
+name = "capstone"
 version.workspace = true
 authors = ["David Renshaw <dwrenshaw@gmail.com>"]
 license.workspace = true
@@ -12,6 +12,9 @@ rust-version.workspace = true
 readme = "README.md"
 
 keywords = ["encoding", "protocol", "serialization"]
+
+[lib]
+name = "capnp"
 
 [dependencies]
 quickcheck = { version = "1", optional = true }
@@ -42,5 +45,5 @@ std = ["embedded-io?/std"]
 sync_reader = []
 
 [lints.clippy]
-type_complexity = "allow"  # this should be removed in future
-missing_safety_doc = "allow"  # this should be removed in future
+type_complexity = "allow"    # this should be removed in future
+missing_safety_doc = "allow" # this should be removed in future

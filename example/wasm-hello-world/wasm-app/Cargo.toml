@@ -10,10 +10,10 @@ members = ["."]
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies.capnp]
-path = "../../../capnp"
+[dependencies.capstone]
+path = "../../../capstone"
 default-features = false
 features = ["unaligned"]
 
-[dependencies.capnp-import]
-path = "../../../capnp-import"
+[dependencies.capstone-import]
+path = "../../../capstone-import"

@@ -9,9 +9,9 @@ name = "pubsub"
 path = "main.rs"
 
 [dependencies]
-capnp.workspace = true
-capnp-import.workspace = true
+capstone.workspace = true
+capstone-import.workspace = true
 futures.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-capnp-rpc.workspace = true
+capstone-rpc.workspace = true

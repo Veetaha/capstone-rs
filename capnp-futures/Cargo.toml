@@ -1,22 +1,25 @@
 [package]
-name = "capnp-futures"
+name = "capstone-futures"
 version.workspace = true
 authors = ["David Renshaw <drenshaw@gmail.com>"]
 license.workspace = true
 description = "async serialization for Cap'n Proto messages"
 repository.workspace = true
-documentation = "https://docs.rs/capnp-futures/"
+documentation = "https://docs.rs/capstone-futures/"
 edition.workspace = true
 readme = "README.md"
 
 keywords = ["async"]
 
+[lib]
+name = "capnp_futures"
+
 [dependencies]
-capnp.workspace = true
+capstone.workspace = true
 quickcheck = { version = "1", optional = true }
 futures.workspace = true
 
 [dev-dependencies]
-capnp = { workspace = true, features = ["quickcheck"] }
+capstone = { workspace = true, features = ["quickcheck"] }
 futures = { workspace = true, features = ["executor"] }
 quickcheck = "1"

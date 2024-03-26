@@ -1,22 +1,25 @@
 [package]
 
-name = "capnp-rpc"
+name = "capstone-rpc"
 version.workspace = true
 authors = ["David Renshaw <dwrenshaw@sandstorm.io>"]
 license.workspace = true
 description = "implementation of the Cap'n Proto remote procedure call protocol"
 repository.workspace = true
-documentation = "https://docs.rs/capnp-rpc/"
+documentation = "https://docs.rs/capstone-rpc/"
 categories = ["network-programming"]
 autoexamples = false
 edition.workspace = true
 
 readme = "README.md"
 
+[lib]
+name = "capnp_rpc"
+
 [dependencies.futures]
 workspace = true
 
 [dependencies]
-capnp-futures.workspace = true
-capnp.workspace = true
+capstone-futures.workspace = true
+capstone.workspace = true
 tokio.workspace = true

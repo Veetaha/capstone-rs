@@ -20,8 +20,7 @@
 // THE SOFTWARE.
 
 use crate::calculator_capnp::calculator;
-use capnp::capability::Promise;
-use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
+use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use futures::AsyncReadExt;
 
