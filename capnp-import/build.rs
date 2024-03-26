@@ -14,16 +14,16 @@ use anyhow::bail;
 // update this whenever you change the subtree pointer
 const CAPNP_VERSION: &str = "2.0-fs";
 
-enum CapnprotoAcquired {
+enum CapstoneAcquired {
     Locally(PathBuf),
     OnSystem(PathBuf),
 }
 
-impl Display for CapnprotoAcquired {
+impl Display for CapstoneAcquired {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CapnprotoAcquired::Locally(e) => write!(f, "{}", e.display()),
-            CapnprotoAcquired::OnSystem(e) => write!(f, "{}", e.display()),
+            CapstoneAcquired::Locally(e) => write!(f, "{}", e.display()),
+            CapstoneAcquired::OnSystem(e) => write!(f, "{}", e.display()),
         }
     }
 }
@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
     // we're making the assumption that the executable is always accessible.
     // if we can't make this assumption, we can just include_bytes!() it and then unpack it at runtime.
 
-    println!("cargo:rerun-if-changed=capnproto");
+    println!("cargo:rerun-if-changed=capstone");
 
     let out_dir = PathBuf::from(
         env::var("OUT_DIR").context("Cargo did not set $OUT_DIR. this should be impossible.")?,
@@ -40,7 +40,7 @@ fn main() -> anyhow::Result<()> {
 
     // updated with the final path of the capnp binary if it's ever found, to be recorded
     // and consumed by capnp_import!()
-    let mut capnp_path: Option<CapnprotoAcquired> = None;
+    let mut capnp_path: Option<CapstoneAcquired> = None;
 
     // only build if it can't be detected in the $PATH
     // check if there is a capnp binary in the path that meets the version requirement
@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         println!("found capnp '{version}'");
 
         if version.trim() == format!("Cap'n Proto version {}", CAPNP_VERSION) {
-            capnp_path = Some(CapnprotoAcquired::OnSystem(bin.clone()));
+            capnp_path = Some(CapstoneAcquired::OnSystem(bin.clone()));
             Ok(bin)
         } else {
             println!("cargo:warning=System version of capnp found ({}) does not meet version requirement {CAPNP_VERSION}.", &version);
@@ -63,16 +63,13 @@ fn main() -> anyhow::Result<()> {
         }
     })();
 
-    // no capnp here, proceed to build
+    // no capstone here, proceed to build
     if let Err(e) = existing_capnp {
         #[cfg(feature = "deny-net-fetch")]
         bail!("Couldn't find a local capnp: {}\n refusing to build", e);
 
         println!("Couldn't find a local capnp: {}", e);
         println!("building...");
-
-        // when capnproto accepts our PR, windows can fetch bin artifacts from it.
-        // until then, we must build capnproto ourselves.
 
         let built_bin = build_with_cmake(&out_dir)?;
 
@@ -124,10 +121,10 @@ fn get_version(executable: &Path) -> anyhow::Result<String> {
     Ok(version)
 }
 
-// build capnproto with cmake, configured for windows and linux envs
-fn build_with_cmake(out_dir: &PathBuf) -> anyhow::Result<CapnprotoAcquired> {
+// build capstone with cmake, configured for windows and linux envs
+fn build_with_cmake(out_dir: &PathBuf) -> anyhow::Result<CapstoneAcquired> {
     // is dst consistent? might need to write this down somewhere if it isn't
-    let mut dst = cmake::Config::new("capnproto");
+    let mut dst = cmake::Config::new("capstone");
 
     if which::which("ninja").is_ok() {
         dst.generator("Ninja");
@@ -148,14 +145,14 @@ fn build_with_cmake(out_dir: &PathBuf) -> anyhow::Result<CapnprotoAcquired> {
 
     assert_eq!(*out_dir, dst);
 
-    // place the capnproto binary in $OUT_DIR, next to where binary_decision.rs
-    // is intended to go
+    // place the capstone binary in $OUT_DIR, next to where binary_decision.rs
+    // is intended to go (it's still called capnp.exe for compatibility)
     if cfg!(target_os = "windows") {
-        Ok(CapnprotoAcquired::Locally(
+        Ok(CapstoneAcquired::Locally(
             RelativePathBuf::from("bin/capnp.exe").to_path(out_dir),
         ))
     } else if cfg!(target_os = "linux") || cfg!(target_os = "macos") {
-        Ok(CapnprotoAcquired::Locally(
+        Ok(CapstoneAcquired::Locally(
             RelativePathBuf::from("bin/capnp").to_path(out_dir),
         ))
     } else {
