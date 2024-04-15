@@ -1,4 +1,4 @@
-use capnp::dynamic_value;
+use capnp::{dynamic_struct, dynamic_value};
 use fill_random_values::Filler;
 
 capnp_import::capnp_import!("fill.capnp");
@@ -12,5 +12,9 @@ pub fn main() {
     let dynamic: dynamic_value::Builder = addressbook.reborrow().into();
     filler.fill(dynamic.downcast()).unwrap();
 
-    println!("{:#?}", addressbook.into_reader());
+    // Ensure we can downcast back to our original struct builder
+    let dynamic: dynamic_value::Builder = addressbook.reborrow().into();
+    let downcast: dynamic_struct::Builder = dynamic.downcast();
+    let specific: addressbook_capnp::address_book::Builder = downcast.downcast().unwrap();
+    println!("{:#?}", specific.into_reader());
 }

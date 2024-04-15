@@ -274,6 +274,17 @@ impl<'a> Builder<'a> {
         self.schema
     }
 
+    pub fn downcast<
+        T: crate::traits::HasTypeId + ::core::convert::From<crate::private::layout::StructBuilder<'a>>,
+    >(
+        self,
+    ) -> Result<T> {
+        if self.get_schema().get_proto().get_id() == T::TYPE_ID {
+            return Ok(self.builder.into());
+        }
+        Err(Error::from_kind(ErrorKind::TypeMismatch))
+    }
+
     pub fn get(self, field: Field) -> Result<dynamic_value::Builder<'a>> {
         assert_eq!(self.schema.raw, field.parent.raw);
         let ty = field.get_type();
