@@ -363,15 +363,16 @@ impl Client {
 }
 
 /// An untyped server.
+#[allow(async_fn_in_trait)]
 #[cfg(feature = "alloc")]
 pub trait Server {
-    fn dispatch_call(
-        &mut self,
+    async fn dispatch_call(
+        &self,
         interface_id: u64,
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> Result<impl core::future::Future<Output = Result<(), Error>>, Error>;
+    ) -> Result<(), Error>;
 }
 
 /// Trait to track the relationship between generated Server traits and Client structs.

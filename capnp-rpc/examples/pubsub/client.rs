@@ -27,17 +27,16 @@ use futures::AsyncReadExt;
 struct SubscriberImpl;
 
 impl subscriber::Server<::capnp::text::Owned> for SubscriberImpl {
-    fn push_message<'b>(
-        &mut self,
+    async fn push_message(
+        &self,
         params: subscriber::PushMessageParams<::capnp::text::Owned>,
         _results: subscriber::PushMessageResults<::capnp::text::Owned>,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         println!(
             "message from publisher: {}",
             params.get()?.get_message()?.to_str()?
         );
-        Ok(async { Ok(()) })
+        Ok(())
     }
 }
 

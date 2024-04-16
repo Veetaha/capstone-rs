@@ -60,11 +60,11 @@ impl TestInterfaceImpl {
 }
 
 impl test_interface::Server for TestInterfaceImpl {
-    fn foo<'b>(
-        &mut self,
+    async fn foo(
+        &self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         if let Some(err) = self.inner.borrow().error.as_ref() {
             return Err(err.clone());
         }
@@ -80,9 +80,9 @@ impl test_interface::Server for TestInterfaceImpl {
             results.set_x(s[..].into());
         }
         if let Some(fut) = self.inner.borrow().block.as_ref() {
-            Ok(fut.clone())
+            fut.clone().await
         } else {
-            Ok(Promise::<(), capnp::Error>::ok(()).shared())
+            Promise::<(), capnp::Error>::ok(()).shared().await
         }
     }
 }
@@ -264,14 +264,14 @@ impl Bootstrap {
 }
 
 impl test_capnp::bootstrap::Server for Bootstrap {
-    fn test_interface<'b>(
-        &mut self,
+    async fn test_interface(
+        &self,
         _params: test_capnp::bootstrap::TestInterfaceParams,
         mut results: test_capnp::bootstrap::TestInterfaceResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         if let Some(client) = self.0.borrow_mut().take() {
             results.get().set_cap(client);
-            Ok(async { Ok(()) })
+            Ok(())
         } else {
             Err(Error::failed("No interface available".into()))
         }

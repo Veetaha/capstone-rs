@@ -27,20 +27,20 @@ use test_schema_capnp::test_interface;
 
 #[derive(Default)]
 struct TestInterfaceImpl {
-    value: u64,
+    value: std::cell::RefCell<u64>,
 }
 
 #[capnproto_rpc(test_interface)]
 impl test_interface::Server for TestInterfaceImpl {
-    fn set_value(&mut self, value: u64) {
-        self.value = value;
-        Ok(async { Ok(()) })
+    async fn set_value(&self, value: u64) {
+        *self.value.borrow_mut() = value;
+        Ok(())
     }
 
-    fn get_value(&mut self) {
+    async fn get_value(&self) {
         let mut rresult = results.get();
-        capnp_build!(rresult, { value = self.value });
-        Ok(async { Ok(()) })
+        capnp_build!(rresult, { value = self.value.borrow().clone() });
+        Ok(())
     }
 }
 

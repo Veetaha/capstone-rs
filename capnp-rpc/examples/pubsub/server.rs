@@ -66,7 +66,7 @@ impl Drop for SubscriptionImpl {
 impl subscription::Server for SubscriptionImpl {}
 
 struct PublisherImpl {
-    next_id: u64,
+    next_id: RefCell<u64>,
     subscribers: Rc<RefCell<SubscriberMap>>,
 }
 
@@ -75,7 +75,7 @@ impl PublisherImpl {
         let subscribers = Rc::new(RefCell::new(SubscriberMap::new()));
         (
             Self {
-                next_id: 0,
+                next_id: 0.into(),
                 subscribers: subscribers.clone(),
             },
             subscribers,
@@ -84,15 +84,14 @@ impl PublisherImpl {
 }
 
 impl publisher::Server<::capnp::text::Owned> for PublisherImpl {
-    fn subscribe<'b>(
-        &mut self,
+    async fn subscribe(
+        &self,
         params: publisher::SubscribeParams<::capnp::text::Owned>,
         mut results: publisher::SubscribeResults<::capnp::text::Owned>,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         println!("subscribe");
         self.subscribers.borrow_mut().subscribers.insert(
-            self.next_id,
+            self.next_id.borrow().clone(),
             SubscriberHandle {
                 client: params.get()?.get_subscriber()?,
                 requests_in_flight: 0,
@@ -102,12 +101,12 @@ impl publisher::Server<::capnp::text::Owned> for PublisherImpl {
         results
             .get()
             .set_subscription(capnp_rpc::new_client(SubscriptionImpl::new(
-                self.next_id,
+                self.next_id.borrow().clone(),
                 self.subscribers.clone(),
             )));
 
-        self.next_id += 1;
-        Ok(async { Ok(()) })
+        *self.next_id.borrow_mut() += 1;
+        Ok(())
     }
 }
 
