@@ -302,7 +302,7 @@ pub struct Client<S>
 where
     S: capability::Server,
 {
-    inner: Rc<RefCell<S>>,
+    inner: Rc<S>,
 }
 
 impl<S> Client<S>
@@ -311,11 +311,11 @@ where
 {
     pub fn new(server: S) -> Self {
         Self {
-            inner: Rc::new(RefCell::new(server)),
+            inner: Rc::new(server),
         }
     }
 
-    pub fn from_rc(inner: Rc<RefCell<S>>) -> Self {
+    pub fn from_rc(inner: Rc<S>) -> Self {
         Self { inner }
     }
 }
@@ -367,25 +367,19 @@ where
         // This currently relies on the task scheduler being first-in-first-out.
         let inner = self.inner.clone();
         Promise::from_future(async move {
-            let f = {
-                // We put this borrow_mut() inside a block to avoid a potential
-                // double borrow during f.await
-
-                //TODO Placeholder unsafe until rust 2024 edition
-                let server = unsafe { &mut (*inner.as_ptr()) };
-                server.dispatch_call(
+            inner
+                .dispatch_call(
                     interface_id,
                     method_id,
                     ::capnp::capability::Params::new(params),
                     ::capnp::capability::Results::new(results),
-                )?
-            };
-            f.await
+                )
+                .await
         })
     }
 
     fn get_ptr(&self) -> usize {
-        self.inner.as_ptr() as usize
+        Rc::<S>::as_ptr(&self.inner) as usize
     }
 
     fn get_brand(&self) -> usize {

@@ -28,12 +28,11 @@ use futures::AsyncReadExt;
 pub struct PowerFunction;
 
 impl calculator::function::Server for PowerFunction {
-    fn call<'b>(
-        &mut self,
+    async fn call(
+        &self,
         params: calculator::function::CallParams,
         mut results: calculator::function::CallResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         let params = params.get()?.get_params()?;
         if params.len() != 2 {
             Err(::capnp::Error::failed(
@@ -41,7 +40,7 @@ impl calculator::function::Server for PowerFunction {
             ))
         } else {
             results.get().set_value(params.get(0).powf(params.get(1)));
-            Ok(async { Ok(()) })
+            Ok(())
         }
     }
 }

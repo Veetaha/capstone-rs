@@ -36,82 +36,82 @@ use std::rc::Rc;
 pub struct Bootstrap;
 
 impl bootstrap::Server for Bootstrap {
-    fn test_interface<'b>(
-        &mut self,
+    async fn test_interface(
+        &self,
         _params: bootstrap::TestInterfaceParams,
         mut results: bootstrap::TestInterfaceResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         {
             results
                 .get()
                 .set_cap(capnp_rpc::new_client(TestInterface::new()));
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn test_extends<'b>(
-        &mut self,
+    async fn test_extends(
+        &self,
         _params: bootstrap::TestExtendsParams,
         mut results: bootstrap::TestExtendsResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         {
             results.get().set_cap(capnp_rpc::new_client(TestExtends));
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn test_extends2<'b>(
-        &mut self,
+    async fn test_extends2(
+        &self,
         _params: bootstrap::TestExtends2Params,
         _results: bootstrap::TestExtends2Results,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Ok(async { unimplemented!() })
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 
-    fn test_pipeline<'b>(
-        &mut self,
+    async fn test_pipeline(
+        &self,
         _params: bootstrap::TestPipelineParams,
         mut results: bootstrap::TestPipelineResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         {
             results.get().set_cap(capnp_rpc::new_client(TestPipeline));
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn test_call_order<'b>(
-        &mut self,
+    async fn test_call_order(
+        &self,
         _params: bootstrap::TestCallOrderParams,
         mut results: bootstrap::TestCallOrderResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         {
             results
                 .get()
                 .set_cap(capnp_rpc::new_client(TestCallOrder::new()));
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
-    fn test_more_stuff<'b>(
-        &mut self,
+    async fn test_more_stuff(
+        &self,
         _params: bootstrap::TestMoreStuffParams,
         mut results: bootstrap::TestMoreStuffResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         {
             results
                 .get()
                 .set_cap(capnp_rpc::new_client(TestMoreStuff::new()));
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
-    fn test_capability_server_set<'b>(
-        &mut self,
+    async fn test_capability_server_set(
+        &self,
         _params: bootstrap::TestCapabilityServerSetParams,
         mut results: bootstrap::TestCapabilityServerSetResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         results
             .get()
             .set_cap(capnp_rpc::new_client(TestCapabilityServerSet::new()));
-        Ok(async { Ok(()) })
+        Ok(())
     }
 }
 
@@ -133,11 +133,11 @@ impl TestInterface {
 }
 
 impl test_interface::Server for TestInterface {
-    fn foo<'b>(
-        &mut self,
+    async fn foo(
+        &self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         self.increment_call_count();
         let params = params.get()?;
         if params.get_i() != 123 {
@@ -150,39 +150,37 @@ impl test_interface::Server for TestInterface {
             let mut results = results.get();
             results.set_x("foo".into());
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn bar<'b>(
-        &mut self,
+    async fn bar(
+        &self,
         _params: test_interface::BarParams,
         _results: test_interface::BarResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         self.increment_call_count();
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("bar is not implemented".to_string()),
-        )
+        Err(Error::unimplemented("bar is not implemented".to_string()))
     }
 
-    fn baz<'b>(
-        &mut self,
+    async fn baz(
+        &self,
         params: test_interface::BazParams,
         _results: test_interface::BazResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         self.increment_call_count();
         crate::test_util::CheckTestMessage::check_test_message(params.get()?.get_s()?);
-        Ok(async { Ok(()) })
+        Ok(())
     }
 }
 
 struct TestExtends;
 
 impl test_interface::Server for TestExtends {
-    fn foo<'b>(
-        &mut self,
+    async fn foo(
+        &self,
         params: test_interface::FooParams,
         mut results: test_interface::FooResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         let params = params.get()?;
         if params.get_i() != 321 {
             return Err(Error::failed("expected i to equal 321".to_string()));
@@ -194,69 +192,61 @@ impl test_interface::Server for TestExtends {
             let mut results = results.get();
             results.set_x("bar".into());
         }
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn bar<'b>(
-        &mut self,
+    async fn bar(
+        &self,
         _params: test_interface::BarParams,
         _results: test_interface::BarResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("bar is not implemented".to_string()),
-        )
+    ) -> Result<(), Error> {
+        Err(Error::unimplemented("bar is not implemented".to_string()))
     }
 
-    fn baz<'b>(
-        &mut self,
+    async fn baz(
+        &self,
         _params: test_interface::BazParams,
         _results: test_interface::BazResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("baz is not implemented".to_string()),
-        )
+    ) -> Result<(), Error> {
+        Err(Error::unimplemented("baz is not implemented".to_string()))
     }
 }
 
 impl test_extends::Server for TestExtends {
-    fn qux<'b>(
-        &mut self,
+    async fn qux(
+        &self,
         _params: test_extends::QuxParams,
         _results: test_extends::QuxResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("qux is not implemented".to_string()),
-        )
+    ) -> Result<(), Error> {
+        Err(Error::unimplemented("qux is not implemented".to_string()))
     }
 
-    fn corge<'b>(
-        &mut self,
+    async fn corge(
+        &self,
         _params: test_extends::CorgeParams,
         _results: test_extends::CorgeResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("corge is not implemented".to_string()),
-        )
+    ) -> Result<(), Error> {
+        Err(Error::unimplemented("corge is not implemented".to_string()))
     }
 
-    fn grault<'b>(
-        &mut self,
+    async fn grault(
+        &self,
         _params: test_extends::GraultParams,
         mut results: test_extends::GraultResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         crate::test_util::init_test_message(results.get());
-        Ok(async { Ok(()) })
+        Ok(())
     }
 }
 
 struct TestPipeline;
 
 impl test_pipeline::Server for TestPipeline {
-    fn get_cap<'b>(
-        &mut self,
+    async fn get_cap(
+        &self,
         params: test_pipeline::GetCapParams,
         mut results: test_pipeline::GetCapResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         if params.get()?.get_n() != 234 {
             return Err(Error::failed("expected n to equal 234".to_string()));
         }
@@ -265,36 +255,41 @@ impl test_pipeline::Server for TestPipeline {
         request.get().set_i(123);
         request.get().set_j(true);
 
-        Ok(request.send().promise.map(move |response| {
-            if response?.get()?.get_x()? != "foo" {
-                return Err(Error::failed("expected x to equal 'foo'".to_string()));
-            }
+        request
+            .send()
+            .promise
+            .map(move |response| {
+                if response?.get()?.get_x()? != "foo" {
+                    return Err(Error::failed("expected x to equal 'foo'".to_string()));
+                }
 
-            results.get().set_s("bar".into());
+                results.get().set_s("bar".into());
 
-            // TODO implement better casting
-            results
-                .get()
-                .init_out_box()
-                .set_cap(test_interface::Client {
-                    client: capnp_rpc::new_client::<test_extends::Client, _>(TestExtends).client,
-                });
-            Ok(())
-        }))
+                // TODO implement better casting
+                results
+                    .get()
+                    .init_out_box()
+                    .set_cap(test_interface::Client {
+                        client: capnp_rpc::new_client::<test_extends::Client, _>(TestExtends)
+                            .client,
+                    });
+                Ok(())
+            })
+            .await
     }
 
-    fn get_null_cap<'b>(
-        &mut self,
+    async fn get_null_cap(
+        &self,
         _params: test_pipeline::GetNullCapParams,
         _results: test_pipeline::GetNullCapResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Ok(async { Ok(()) })
+    ) -> Result<(), Error> {
+        Ok(())
     }
 }
 
 #[derive(Default)]
 pub struct TestCallOrder {
-    count: u32,
+    count: std::cell::RefCell<u32>,
 }
 
 impl TestCallOrder {
@@ -304,22 +299,22 @@ impl TestCallOrder {
 }
 
 impl test_call_order::Server for TestCallOrder {
-    fn get_call_sequence<'b>(
-        &mut self,
+    async fn get_call_sequence(
+        &self,
         _params: test_call_order::GetCallSequenceParams,
         mut results: test_call_order::GetCallSequenceResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        results.get().set_n(self.count);
-        self.count += 1;
-        Ok(async { Ok(()) })
+    ) -> Result<(), Error> {
+        results.get().set_n(*self.count.borrow_mut());
+        *self.count.borrow_mut() += 1;
+        Ok(())
     }
 }
 
 #[derive(Default)]
 pub struct TestMoreStuff {
-    call_count: u32,
+    call_count: std::cell::RefCell<u32>,
     handle_count: Rc<Cell<i64>>,
-    client_to_hold: Option<test_interface::Client>,
+    client_to_hold: std::cell::RefCell<Option<test_interface::Client>>,
 }
 
 impl TestMoreStuff {
@@ -336,66 +331,73 @@ impl TestMoreStuff {
 }
 
 impl test_call_order::Server for TestMoreStuff {
-    fn get_call_sequence<'b>(
-        &mut self,
+    async fn get_call_sequence(
+        &self,
         _params: test_call_order::GetCallSequenceParams,
         mut results: test_call_order::GetCallSequenceResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        results.get().set_n(self.call_count);
-        self.call_count += 1;
-        Ok(async { Ok(()) })
+    ) -> Result<(), Error> {
+        results.get().set_n(*self.call_count.borrow_mut());
+        *self.call_count.borrow_mut() += 1;
+        Ok(())
     }
 }
 
 impl test_more_stuff::Server for TestMoreStuff {
-    fn call_foo<'b>(
-        &mut self,
+    async fn call_foo(
+        &self,
         params: test_more_stuff::CallFooParams,
         mut results: test_more_stuff::CallFooResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
         let cap = params.get()?.get_cap()?;
         let mut request = cap.foo_request();
         request.get().set_i(123);
         request.get().set_j(true);
 
-        Ok(request.send().promise.map(move |response| {
-            if response?.get()?.get_x()? != "foo" {
-                return Err(Error::failed("expected x to equal 'foo'".to_string()));
-            }
-            results.get().set_s("bar".into());
-            Ok(())
-        }))
-    }
-
-    fn call_foo_when_resolved<'b>(
-        &mut self,
-        params: test_more_stuff::CallFooWhenResolvedParams,
-        mut results: test_more_stuff::CallFooWhenResolvedResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
-        let cap = params.get()?.get_cap()?;
-
-        Ok(cap.client.when_resolved().and_then(move |()| {
-            let mut request = cap.foo_request();
-            request.get().set_i(123);
-            request.get().set_j(true);
-            request.send().promise.map(move |response| {
+        request
+            .send()
+            .promise
+            .map(move |response| {
                 if response?.get()?.get_x()? != "foo" {
                     return Err(Error::failed("expected x to equal 'foo'".to_string()));
                 }
                 results.get().set_s("bar".into());
                 Ok(())
             })
-        }))
+            .await
     }
 
-    fn never_return<'b>(
-        &mut self,
+    async fn call_foo_when_resolved(
+        &self,
+        params: test_more_stuff::CallFooWhenResolvedParams,
+        mut results: test_more_stuff::CallFooWhenResolvedResults,
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
+        let cap = params.get()?.get_cap()?;
+
+        cap.client
+            .when_resolved()
+            .and_then(move |()| {
+                let mut request = cap.foo_request();
+                request.get().set_i(123);
+                request.get().set_j(true);
+                request.send().promise.map(move |response| {
+                    if response?.get()?.get_x()? != "foo" {
+                        return Err(Error::failed("expected x to equal 'foo'".to_string()));
+                    }
+                    results.get().set_s("bar".into());
+                    Ok(())
+                })
+            })
+            .await
+    }
+
+    async fn never_return(
+        &self,
         params: test_more_stuff::NeverReturnParams,
         mut results: test_more_stuff::NeverReturnResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
 
         let cap = params.get()?.get_cap()?;
 
@@ -408,36 +410,36 @@ impl test_more_stuff::Server for TestMoreStuff {
         // Also attach `cap` to the result struct so we can make sure that the results are released.
         results.get().set_cap_copy(cap);
 
-        Ok(promise)
+        promise.await
     }
 
-    fn hold<'b>(
-        &mut self,
+    async fn hold(
+        &self,
         params: test_more_stuff::HoldParams,
         _results: test_more_stuff::HoldResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
-        self.client_to_hold = Some(params.get()?.get_cap()?);
-        Ok(async { Ok(()) })
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
+        self.client_to_hold.replace(Some(params.get()?.get_cap()?));
+        Ok(())
     }
 
-    fn dont_hold<'b>(
-        &mut self,
+    async fn dont_hold(
+        &self,
         params: test_more_stuff::DontHoldParams,
         _results: test_more_stuff::DontHoldResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
         let _ = Some(params.get()?.get_cap()?);
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn call_held<'b>(
-        &mut self,
+    async fn call_held(
+        &self,
         _params: test_more_stuff::CallHeldParams,
         mut results: test_more_stuff::CallHeldResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
-        match self.client_to_hold {
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
+        match *self.client_to_hold.borrow() {
             None => Err(Error::failed("no held client".to_string())),
             Some(ref client) => {
                 let mut request = client.foo_request();
@@ -447,93 +449,97 @@ impl test_more_stuff::Server for TestMoreStuff {
                     params.set_j(true);
                 }
 
-                Ok(request.send().promise.map(move |response| {
-                    if response?.get()?.get_x()? != "foo" {
-                        Err(Error::failed("expected X to equal 'foo'".to_string()))
-                    } else {
-                        results.get().set_s("bar".into());
-                        Ok(())
-                    }
-                }))
+                request
+                    .send()
+                    .promise
+                    .map(move |response| {
+                        if response?.get()?.get_x()? != "foo" {
+                            Err(Error::failed("expected X to equal 'foo'".to_string()))
+                        } else {
+                            results.get().set_s("bar".into());
+                            Ok(())
+                        }
+                    })
+                    .await
             }
         }
     }
 
-    fn get_held<'b>(
-        &mut self,
+    async fn get_held(
+        &self,
         _params: test_more_stuff::GetHeldParams,
         mut results: test_more_stuff::GetHeldResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
-        match self.client_to_hold {
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
+        match *self.client_to_hold.borrow() {
             None => Err(Error::failed("no held client".to_string())),
             Some(ref client) => {
                 results.get().set_cap(client.clone());
-                Ok(async { Ok(()) })
+                Ok(())
             }
         }
     }
 
-    fn echo<'b>(
-        &mut self,
+    async fn echo(
+        &self,
         params: test_more_stuff::EchoParams,
         mut results: test_more_stuff::EchoResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
         results.get().set_cap(params.get()?.get_cap()?);
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn expect_cancel<'b>(
-        &mut self,
+    async fn expect_cancel(
+        &self,
         _params: test_more_stuff::ExpectCancelParams,
         _results: test_more_stuff::ExpectCancelResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Ok(async { unimplemented!() })
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 
-    fn get_handle<'b>(
-        &mut self,
+    async fn get_handle(
+        &self,
         _params: test_more_stuff::GetHandleParams,
         mut results: test_more_stuff::GetHandleResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
         let handle = Handle::new(&self.handle_count);
         results.get().set_handle(capnp_rpc::new_client(handle));
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn get_handle_count<'b>(
-        &mut self,
+    async fn get_handle_count(
+        &self,
         _params: test_more_stuff::GetHandleCountParams,
         mut results: test_more_stuff::GetHandleCountResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.call_count += 1;
+    ) -> Result<(), Error> {
+        *self.call_count.borrow_mut() += 1;
         results.get().set_count(self.handle_count.get());
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn get_null<'b>(
-        &mut self,
+    async fn get_null(
+        &self,
         _params: test_more_stuff::GetNullParams,
         _results: test_more_stuff::GetNullResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Ok(async { unimplemented!() })
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 
-    fn method_with_defaults<'b>(
-        &mut self,
+    async fn method_with_defaults(
+        &self,
         _params: test_more_stuff::MethodWithDefaultsParams,
         _results: test_more_stuff::MethodWithDefaultsResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Ok(async { unimplemented!() })
+    ) -> Result<(), Error> {
+        unimplemented!()
     }
 
-    fn call_each_capability<'b>(
-        &mut self,
+    async fn call_each_capability(
+        &self,
         params: test_more_stuff::CallEachCapabilityParams,
         _results: test_more_stuff::CallEachCapabilityResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         let mut results = Vec::new();
         for cap in params.get()?.get_caps()? {
             let mut request = cap?.foo_request();
@@ -542,7 +548,9 @@ impl test_more_stuff::Server for TestMoreStuff {
             results.push(request.send().promise);
         }
 
-        Ok(::futures::future::try_join_all(results).map_ok(|_| ()))
+        ::futures::future::try_join_all(results)
+            .map_ok(|_| ())
+            .await
     }
 }
 
@@ -589,32 +597,28 @@ impl Drop for TestCapDestructor {
 }
 
 impl test_interface::Server for TestCapDestructor {
-    fn foo<'b>(
-        &mut self,
+    async fn foo(
+        &self,
         params: test_interface::FooParams,
         results: test_interface::FooResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        self.imp.foo(params, results)
+    ) -> Result<(), Error> {
+        self.imp.foo(params, results).await
     }
 
-    fn bar<'b>(
-        &mut self,
+    async fn bar(
+        &self,
         _params: test_interface::BarParams,
         _results: test_interface::BarResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("bar is not implemented".to_string()),
-        )
+    ) -> Result<(), Error> {
+        Err(Error::unimplemented("bar is not implemented".to_string()))
     }
 
-    fn baz<'b>(
-        &mut self,
+    async fn baz(
+        &self,
         _params: test_interface::BazParams,
         _results: test_interface::BazResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
-        Result::<std::future::Ready<Result<(), capnp::Error>>, capnp::Error>::Err(
-            Error::unimplemented("bar is not implemented".to_string()),
-        )
+    ) -> Result<(), Error> {
+        Err(Error::unimplemented("bar is not implemented".to_string()))
     }
 }
 
@@ -645,32 +649,30 @@ impl TestCapabilityServerSet {
 }
 
 impl test_capability_server_set::Server for TestCapabilityServerSet {
-    fn create_handle<'b>(
-        &mut self,
+    async fn create_handle(
+        &self,
         _: test_capability_server_set::CreateHandleParams,
         mut results: test_capability_server_set::CreateHandleResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         results
             .get()
             .set_handle(self.set.borrow_mut().new_client(CssHandle::new()));
-        Ok(async { Ok(()) })
+        Ok(())
     }
 
-    fn check_handle<'b>(
-        &mut self,
+    async fn check_handle(
+        &self,
         params: test_capability_server_set::CheckHandleParams,
         mut results: test_capability_server_set::CheckHandleResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), Error>> + 'b, Error> {
+    ) -> Result<(), Error> {
         let set = self.set.clone();
         let handle = params.get()?.get_handle()?;
 
-        Ok(async move {
-            let resolved = capnp::capability::get_resolved_cap(handle).await;
-            match set.borrow().get_local_server_of_resolved(&resolved) {
-                None => (),
-                Some(_) => results.get().set_is_ours(true),
-            }
-            Ok(())
-        })
+        let resolved = capnp::capability::get_resolved_cap(handle).await;
+        match set.borrow().get_local_server_of_resolved(&resolved) {
+            None => (),
+            Some(_) => results.get().set_is_ours(true),
+        }
+        Ok(())
     }
 }

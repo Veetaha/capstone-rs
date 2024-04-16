@@ -41,14 +41,13 @@ impl ValueImpl {
 }
 
 impl calculator::value::Server for ValueImpl {
-    fn read<'b>(
-        &mut self,
+    async fn read(
+        &self,
         _params: calculator::value::ReadParams,
         mut results: calculator::value::ReadResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         results.get().set_value(self.value);
-        Ok(async { Ok(()) })
+        Ok(())
     }
 }
 
@@ -93,27 +92,27 @@ fn evaluate_impl(
 
 struct FunctionImpl {
     param_count: u32,
-    body: ::capnp_rpc::ImbuedMessageBuilder<::capnp::message::HeapAllocator>,
+    body: std::cell::RefCell<::capnp_rpc::ImbuedMessageBuilder<::capnp::message::HeapAllocator>>,
 }
 
 impl FunctionImpl {
     fn new(param_count: u32, body: calculator::expression::Reader) -> ::capnp::Result<Self> {
         let mut result = Self {
             param_count,
-            body: ::capnp_rpc::ImbuedMessageBuilder::new(::capnp::message::HeapAllocator::new()),
+            body: ::capnp_rpc::ImbuedMessageBuilder::new(::capnp::message::HeapAllocator::new())
+                .into(),
         };
-        result.body.set_root(body)?;
+        result.body.borrow_mut().set_root(body)?;
         Ok(result)
     }
 }
 
 impl calculator::function::Server for FunctionImpl {
-    fn call<'b>(
-        &mut self,
+    async fn call(
+        &self,
         params: calculator::function::CallParams,
         mut results: calculator::function::CallResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         let params = params.get()?.get_params()?;
         if params.len() != self.param_count {
             return Err(Error::failed(format!(
@@ -125,14 +124,14 @@ impl calculator::function::Server for FunctionImpl {
 
         let eval = evaluate_impl(
             self.body
+                .borrow_mut()
                 .get_root::<calculator::expression::Builder>()?
                 .into_reader(),
             Some(params),
         );
-        Ok(async move {
-            results.get().set_value(eval.await?);
-            Ok(())
-        })
+
+        results.get().set_value(eval.await?);
+        Ok(())
     }
 }
 
@@ -142,12 +141,11 @@ pub struct OperatorImpl {
 }
 
 impl calculator::function::Server for OperatorImpl {
-    fn call<'b>(
-        &mut self,
+    async fn call(
+        &self,
         params: calculator::function::CallParams,
         mut results: calculator::function::CallResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         let params = params.get()?.get_params()?;
         if params.len() != 2 {
             Err(Error::failed("Wrong number of paramters.".to_string()))
@@ -159,7 +157,7 @@ impl calculator::function::Server for OperatorImpl {
                 calculator::Operator::Divide => params.get(0) / params.get(1),
             };
             results.get().set_value(v);
-            Ok(async { Ok(()) })
+            Ok(())
         }
     }
 }
@@ -167,45 +165,40 @@ impl calculator::function::Server for OperatorImpl {
 struct CalculatorImpl;
 
 impl calculator::Server for CalculatorImpl {
-    fn evaluate<'b>(
-        &mut self,
+    async fn evaluate(
+        &self,
         params: calculator::EvaluateParams,
         mut results: calculator::EvaluateResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
-        Ok(async move {
-            let v = evaluate_impl(params.get()?.get_expression()?, None).await?;
-            results
-                .get()
-                .set_value(capnp_rpc::new_client(ValueImpl::new(v)));
-            Ok(())
-        })
+    ) -> Result<(), capnp::Error> {
+        let v = evaluate_impl(params.get()?.get_expression()?, None).await?;
+        results
+            .get()
+            .set_value(capnp_rpc::new_client(ValueImpl::new(v)));
+        Ok(())
     }
-    fn def_function<'b>(
-        &mut self,
+    async fn def_function(
+        &self,
         params: calculator::DefFunctionParams,
         mut results: calculator::DefFunctionResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         results
             .get()
             .set_func(capnp_rpc::new_client(FunctionImpl::new(
                 params.get()?.get_param_count() as u32,
                 params.get()?.get_body()?,
             )?));
-        Ok(async { Ok(()) })
+        Ok(())
     }
-    fn get_operator<'b>(
-        &mut self,
+    async fn get_operator(
+        &self,
         params: calculator::GetOperatorParams,
         mut results: calculator::GetOperatorResults,
-    ) -> Result<impl std::future::Future<Output = Result<(), capnp::Error>> + 'b, capnp::Error>
-    {
+    ) -> Result<(), capnp::Error> {
         let op = params.get()?.get_op()?;
         results
             .get()
             .set_func(capnp_rpc::new_client(OperatorImpl { op }));
-        Ok(async { Ok(()) })
+        Ok(())
     }
 }
 
