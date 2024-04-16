@@ -79,9 +79,15 @@ impl test_interface::Server for TestInterfaceImpl {
             let mut results = results.get();
             results.set_x(s[..].into());
         }
-        if let Some(fut) = self.inner.borrow().block.as_ref() {
-            fut.clone().await
+        let borrowed = self.inner.borrow();
+        if let Some(fut) = borrowed.block.as_ref() {
+            let f = fut.clone();
+            let _ = fut;
+            drop(borrowed);
+            f.clone().await
+            
         } else {
+            drop(borrowed);
             Promise::<(), capnp::Error>::ok(()).shared().await
         }
     }
