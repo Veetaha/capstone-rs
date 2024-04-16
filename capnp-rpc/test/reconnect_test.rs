@@ -85,7 +85,6 @@ impl test_interface::Server for TestInterfaceImpl {
             let _ = fut;
             drop(borrowed);
             f.clone().await
-            
         } else {
             drop(borrowed);
             Promise::<(), capnp::Error>::ok(()).shared().await
