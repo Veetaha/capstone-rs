@@ -676,7 +676,3 @@ impl<'a> IntoResult for crate::any_pointer::Reader<'a> {
         Ok::<Self::InnerType, Error>(self)
     }
 }
-
-pub fn ok() -> Result<impl core::future::Future<Output = Result<()>>> {
-    Ok(core::future::ready(Ok(())))
-}
