@@ -14,5 +14,5 @@ path = "test.rs"
 capstone-futures.workspace = true
 capstone.workspace = true
 capstone-import.workspace = true
-futures.workspace = true
+tokio.workspace = true
 async-byte-channel.workspace = true

@@ -24,7 +24,7 @@
 use capnp::serialize::{OwnedSegments, SegmentLengthsBuilder};
 use capnp::{message, Error, OutputSegments, Result};
 
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Asynchronously reads a message from `reader`.
 pub async fn read_message<R>(
@@ -262,8 +262,8 @@ pub mod test {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    use futures::io::Cursor;
-    use futures::{AsyncRead, AsyncWrite};
+    use std::io::Cursor;
+    use tokio::io::{AsyncRead, AsyncWrite};
 
     use quickcheck::{quickcheck, TestResult};
 
@@ -635,7 +635,7 @@ pub mod test {
             Poll::Ready(self.writer.flush())
         }
 
-        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
             Poll::Ready(Ok(()))
         }
     }

@@ -7,6 +7,10 @@ description = "Helper library for writing async tests"
 repository.workspace = true
 edition.workspace = true
 
-[dependencies.futures]
+[dependencies.tokio]
 workspace = true
-features = ["executor"]
+features = ["io-util"]
+
+[dev-dependencies.tokio]
+workspace = true
+features = ["io-util", "rt"]

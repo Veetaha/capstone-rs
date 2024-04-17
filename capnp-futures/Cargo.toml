@@ -17,9 +17,10 @@ name = "capnp_futures"
 [dependencies]
 capstone.workspace = true
 quickcheck = { version = "1", optional = true }
-futures.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tokio-stream.workspace = true
 
 [dev-dependencies]
 capstone = { workspace = true, features = ["quickcheck"] }
-futures = { workspace = true, features = ["executor"] }
+tokio = { workspace = true, features = ["io-util", "rt"] }
 quickcheck = "1"
