@@ -130,7 +130,7 @@ fn test(
     j: bool,
 ) -> Result<String, Error> {
     let fut = test_promise(client, i, j);
-    futures::executor::block_on(run_until(pool, fut))
+     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(pool, fut))})
 }
 
 // Lets us poll a future without consuming it
@@ -205,21 +205,21 @@ where
                 // pool.run_until_stalled();
 
                 for _ in 0..31 {
-                    //let _ = futures::executor::block_on(PollOnce(&mut promise1));
-                    //let _ = futures::executor::block_on(PollOnce(&mut promise2));
-                    futures::executor::block_on(PollOnce(pool));
+                    //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
+                    //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
+                     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(pool))});
                 }
 
                 fulfiller
                     .send(Err(capnp::Error::disconnected("test2 disconnect".into())))
                     .unwrap();
                 assert_err!(
-                    futures::executor::block_on(run_until(&pool, promise1))
+                     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise1))})
                         .expect_err("disconnect error"),
                     capnp::Error::disconnected("test2 disconnect".into())
                 );
                 assert_err!(
-                    futures::executor::block_on(run_until(&pool, promise2))
+                     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise2))})
                         .expect_err("disconnect error"),
                     capnp::Error::disconnected("test2 disconnect".into())
                 );
@@ -248,9 +248,9 @@ where
             // pool.run_until_stalled();
 
             for _ in 0..31 {
-                //let _ = futures::executor::block_on(PollOnce(&mut promise1));
-                //let _ = futures::executor::block_on(PollOnce(&mut promise2));
-                futures::executor::block_on(PollOnce(pool));
+                //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
+                //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
+                 tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(pool))});
             }
 
             // Now force a reconnect.
@@ -269,8 +269,8 @@ where
 
     // Everything we initiated should still finish.
     assert_err!(
-        futures::executor::block_on(run_until(&pool, promise4)
-    )
+         tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise4))})
+    
             .expect_err("disconnect error"),
         capnp::Error::disconnected("test3 disconnect".into())
     );
@@ -278,7 +278,7 @@ where
     // Send the request which we created before the disconnect. There are two behaviors we accept
     // as correct here: it may throw the disconnect exception, or it may automatically redirect to
     // the newly-reconnected destination.
-    match futures::executor::block_on(run_until(&pool, req3.send().promise)) {
+    match  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, req3.send().promise))}) {
         Ok(resp) => {
             assert_eq!(resp, "5656 true 3");
         }
@@ -290,15 +290,15 @@ where
     //KJ_EXPECT(!promise1.poll(ws));
     //KJ_EXPECT(!promise2.poll(ws));
     fulfiller.send(Ok(())).unwrap();
-    assert_eq!(futures::executor::block_on(run_until(&pool, promise1)).unwrap(), "1212 true 2");
-    assert_eq!(futures::executor::block_on(run_until(&pool, promise2)).unwrap(), "3434 false 2");
+    assert_eq!( tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise1))}).unwrap(), "1212 true 2");
+    assert_eq!( tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise2))}).unwrap(), "3434 false 2");
 
     Ok(())
 }
 
 /// autoReconnect() direct call (exercises newCall() / RequestHook)
 //#[ignore]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn auto_reconnect_direct_call() {
     let mut pool = tokio::task::LocalSet::new();
     do_autoconnect_test(&mut pool, |c| c).unwrap();
@@ -334,7 +334,7 @@ impl test_capnp::bootstrap::Server for Bootstrap {
 
 /// autoReconnect() through RPC (exercises call() / CallContextHook)
 //#[ignore]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn auto_reconnect_rpc_call() {
     let (client_writer, server_reader) = async_byte_channel::channel();
     let (server_writer, client_reader) = async_byte_channel::channel();
@@ -375,11 +375,11 @@ async fn auto_reconnect_rpc_call() {
         }))
     })
     .unwrap();
-    futures::executor::block_on(pool.run_until(disconnector)).unwrap();
+     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(pool.run_until(disconnector))}).unwrap();
 }
 
 /// lazyAutoReconnect() initialies lazily
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn lazy_auto_reconnect_test() {
     let pool = LocalSet::new();
 
