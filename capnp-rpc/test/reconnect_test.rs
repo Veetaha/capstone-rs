@@ -201,8 +201,6 @@ where
             // pool.run_until_stalled();
 
             for _ in 0..31 {
-                //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
-                //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(PollOnce(pool))
                 });
@@ -250,8 +248,6 @@ where
         // pool.run_until_stalled();
 
         for _ in 0..31 {
-            //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
-            //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(PollOnce(pool))
             });
@@ -316,7 +312,6 @@ where
 }
 
 /// autoReconnect() direct call (exercises newCall() / RequestHook)
-//#[ignore]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn auto_reconnect_direct_call() {
     let mut pool = tokio::task::LocalSet::new();
@@ -352,7 +347,6 @@ impl test_capnp::bootstrap::Server for Bootstrap {
 }
 
 /// autoReconnect() through RPC (exercises call() / CallContextHook)
-//#[ignore]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn auto_reconnect_rpc_call() {
     let (client_writer, server_reader) = async_byte_channel::channel();
