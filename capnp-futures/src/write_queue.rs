@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use futures_util::TryFutureExt;
 use std::future::Future;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::oneshot;
@@ -61,7 +62,7 @@ where
     W: AsyncWrite + Unpin,
     M: AsOutputSegments,
 {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
     let in_flight = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0));
 
@@ -71,7 +72,8 @@ where
     };
 
     let queue = async move {
-        while let Some(item) = rx.next().await {
+        let mut rx_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+        while let Some(item) = rx_stream.next().await {
             match item {
                 Item::Message(m, returner) => {
                     let result = crate::serialize::write_message(&mut writer, &m).await;
@@ -101,9 +103,9 @@ where
     pub fn send(&mut self, message: M) -> impl Future<Output = Result<M, Error>> + Unpin {
         let (complete, oneshot) = oneshot::channel();
 
-        let _ = self.sender.unbounded_send(Item::Message(message, complete));
+        let _ = self.sender.send(Item::Message(message, complete));
 
-        oneshot.map_err(|oneshot::Canceled| Error::disconnected("WriteQueue has terminated".into()))
+        oneshot.map_err(|_| Error::disconnected("WriteQueue has terminated".into()))
     }
 
     /// Returns the number of messages queued to be written.
@@ -126,9 +128,8 @@ where
     ) -> impl Future<Output = Result<(), Error>> + Unpin {
         let (complete, receiver) = oneshot::channel();
 
-        let _ = self.sender.unbounded_send(Item::Done(result, complete));
+        let _ = self.sender.send(Item::Done(result, complete));
 
-        receiver
-            .map_err(|oneshot::Canceled| Error::disconnected("WriteQueue has terminated".into()))
+        receiver.map_err(|_| Error::disconnected("WriteQueue has terminated".into()))
     }
 }

@@ -22,7 +22,7 @@
 use crate::calculator_capnp::calculator;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use futures::AsyncReadExt;
+use tokio::io::AsyncReadExt;
 
 #[derive(Clone, Copy)]
 pub struct PowerFunction;

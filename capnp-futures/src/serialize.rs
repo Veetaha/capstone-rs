@@ -272,9 +272,9 @@ pub mod test {
 
     use super::{read_segment_table, try_read_message, write_message, AsOutputSegments};
 
-    #[test]
-    fn test_read_segment_table() {
-        let mut exec = futures::executor::LocalPool::new();
+    #[tokio::test]
+    async fn test_read_segment_table() {
+        let mut exec = tokio::task::LocalSet::new();
         let mut buf = vec![];
 
         buf.extend(
@@ -288,6 +288,7 @@ pub mod test {
                 Cursor::new(&buf[..]),
                 message::ReaderOptions::new(),
             ))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(0, segment_lengths.total_words());
@@ -306,6 +307,7 @@ pub mod test {
                 &mut Cursor::new(&buf[..]),
                 message::ReaderOptions::new(),
             ))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(1, segment_lengths.total_words());
@@ -325,6 +327,7 @@ pub mod test {
                 &mut Cursor::new(&buf[..]),
                 message::ReaderOptions::new(),
             ))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(2, segment_lengths.total_words());
@@ -344,6 +347,7 @@ pub mod test {
                 &mut Cursor::new(&buf[..]),
                 message::ReaderOptions::new(),
             ))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(258, segment_lengths.total_words());
@@ -368,6 +372,7 @@ pub mod test {
                 &mut Cursor::new(&buf[..]),
                 message::ReaderOptions::new(),
             ))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(200, segment_lengths.total_words());
@@ -378,9 +383,9 @@ pub mod test {
         buf.clear();
     }
 
-    #[test]
-    fn test_read_invalid_segment_table() {
-        let mut exec = futures::executor::LocalPool::new();
+    #[tokio::test]
+    async fn test_read_invalid_segment_table() {
+        let mut exec = tokio::task::LocalSet::new();
         let mut buf = vec![];
 
         buf.extend([0, 2, 0, 0]); // 513 segments
@@ -390,6 +395,7 @@ pub mod test {
                 Cursor::new(&buf[..]),
                 message::ReaderOptions::new()
             ))
+            .await
             .is_err());
         buf.clear();
 
@@ -399,6 +405,7 @@ pub mod test {
                 Cursor::new(&buf[..]),
                 message::ReaderOptions::new()
             ))
+            .await
             .is_err());
 
         buf.clear();
@@ -410,6 +417,7 @@ pub mod test {
                 Cursor::new(&buf[..]),
                 message::ReaderOptions::new()
             ))
+            .await
             .is_err());
         buf.clear();
 
@@ -419,14 +427,17 @@ pub mod test {
                 Cursor::new(&buf[..]),
                 message::ReaderOptions::new()
             ))
+            .await
             .is_err());
         buf.clear();
     }
 
     fn construct_segment_table(segments: &[&[u8]]) -> Vec<u8> {
-        let mut exec = futures::executor::LocalPool::new();
+        let mut exec = tokio::task::LocalSet::new();
         let mut buf = vec![];
-        exec.run_until(super::write_segment_table(&mut buf, segments))
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(exec.run_until(super::write_segment_table(&mut buf, segments)))
             .unwrap();
         buf
     }
@@ -559,20 +570,21 @@ pub mod test {
         fn poll_read(
             mut self: Pin<&mut Self>,
             cx: &mut Context,
-            buf: &mut [u8],
-        ) -> Poll<io::Result<usize>> {
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
             if self.idx == 0 {
                 self.idx = self.blocking_period;
                 cx.waker().clone().wake();
                 Poll::Pending
             } else {
-                let len = cmp::min(self.idx, buf.len());
-                let bytes_read = match self.read.read(&mut buf[..len]) {
+                let len = cmp::min(self.idx, buf.remaining());
+                let bytes_read = match self.read.read(&mut buf.initialize_unfilled()[..len]) {
                     Err(e) => return Poll::Ready(Err(e)),
                     Ok(n) => n,
                 };
                 self.idx -= bytes_read;
-                Poll::Ready(Ok(bytes_read))
+                buf.advance(bytes_read);
+                Poll::Ready(Ok(()))
             }
         }
     }
@@ -654,7 +666,9 @@ pub mod test {
             let (mut read, segments) = {
                 let cursor = std::io::Cursor::new(Vec::new());
                 let mut writer = BlockingWrite::new(cursor, write_blocking_period);
-                futures::executor::block_on(Box::pin(write_message(&mut writer, &segments)))
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(Box::pin(write_message(&mut writer, &segments)))
                     .expect("writing");
 
                 let mut cursor = writer.into_writer();
@@ -662,12 +676,11 @@ pub mod test {
                 (BlockingRead::new(cursor, read_blocking_period), segments)
             };
 
-            let message = futures::executor::block_on(Box::pin(try_read_message(
-                &mut read,
-                Default::default(),
-            )))
-            .expect("reading")
-            .unwrap();
+            let message = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(Box::pin(try_read_message(&mut read, Default::default())))
+                .expect("reading")
+                .unwrap();
             let message_segments = message.into_segments();
 
             TestResult::from_bool(segments.iter().enumerate().all(|(i, segment)| {

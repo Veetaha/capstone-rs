@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use capnp::capability::{FromClientHook, Promise};
 use capnp::private::capability::{ClientHook, RequestHook};
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
 
 pub trait SetTarget<C> {
     fn add_ref(&self) -> Box<dyn SetTarget<C>>;

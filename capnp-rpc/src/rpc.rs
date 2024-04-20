@@ -29,8 +29,9 @@ use capnp::private::capability::{
 };
 use capnp::Error;
 
-use futures::channel::oneshot;
-use futures::{future, Future, FutureExt, TryFutureExt};
+use futures_util::{FutureExt, TryFutureExt};
+use std::future::Future;
+use tokio::sync::oneshot;
 
 use std::cell::{Cell, RefCell};
 use std::cmp::Reverse;
@@ -594,7 +595,7 @@ impl<VatId> ConnectionState<VatId> {
         })) as Pin<Box<dyn Future<Output = ()> + Unpin>>;
         let f2 = Box::pin(rx2.map(drop)) as Pin<Box<dyn Future<Output = ()> + Unpin>>;
 
-        self.add_task(future::select(f1, f2).map(|_| Ok(())));
+        self.add_task(futures_util::future::select(f1, f2).map(|_| Ok(())));
         Promise::from_future(rx.map_err(crate::canceled_to_error).map(|r| {
             drop(tx2);
             r?
@@ -963,7 +964,9 @@ impl<VatId> ConnectionState<VatId> {
                 let (redirected_results_done_promise, redirected_results_done_fulfiller) =
                     if redirect_results {
                         let (f, p) = oneshot::channel::<Result<Response<VatId>, Error>>();
-                        let p = p.map_err(crate::canceled_to_error).and_then(future::ready);
+                        let p = p
+                            .map_err(crate::canceled_to_error)
+                            .and_then(std::future::ready);
                         (Some(Promise::from_future(p)), Some(f))
                     } else {
                         (None, None)
@@ -985,7 +988,7 @@ impl<VatId> ConnectionState<VatId> {
                 let promise = call_promise
                     .then(move |call_result| {
                         results_inner_promise.then(move |result| {
-                            future::ready(ResultsDone::from_results_inner(
+                            std::future::ready(ResultsDone::from_results_inner(
                                 result,
                                 call_result,
                                 pipeline_sender,
@@ -1968,7 +1971,7 @@ where
 {
     variant: PipelineVariant<VatId>,
     redirect_later:
-        Option<RefCell<futures::future::Shared<Promise<Response<VatId>, ::capnp::Error>>>>,
+        Option<RefCell<futures_util::future::Shared<Promise<Response<VatId>, ::capnp::Error>>>>,
     connection_state: Rc<ConnectionState<VatId>>,
 
     #[allow(dead_code)]
@@ -2036,7 +2039,7 @@ impl<VatId> Pipeline<VatId> {
             variant: PipelineVariant::Waiting(question_ref),
             connection_state: connection_state.clone(),
             redirect_later: None,
-            resolve_self_promise: Promise::from_future(future::pending()),
+            resolve_self_promise: Promise::from_future(std::future::pending()),
             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
             resolution_waiters: crate::sender_queue::SenderQueue::new(),
         }));
@@ -2070,7 +2073,7 @@ impl<VatId> Pipeline<VatId> {
             variant: PipelineVariant::Waiting(question_ref),
             connection_state,
             redirect_later: None,
-            resolve_self_promise: Promise::from_future(future::pending()),
+            resolve_self_promise: Promise::from_future(std::future::pending()),
             promise_clients_to_resolve: RefCell::new(crate::sender_queue::SenderQueue::new()),
             resolution_waiters: crate::sender_queue::SenderQueue::new(),
         }));
@@ -2765,7 +2768,7 @@ impl<VatId> PromiseClient<VatId> {
             let (fulfiller, promise) = oneshot::channel::<Result<(), Error>>();
             let promise = promise
                 .map_err(crate::canceled_to_error)
-                .and_then(future::ready);
+                .and_then(std::future::ready);
             let embargo = Embargo::new(fulfiller);
             let embargo_id = connection_state.embargoes.borrow_mut().push(embargo);
 

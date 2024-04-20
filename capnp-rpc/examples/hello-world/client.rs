@@ -23,7 +23,7 @@ use crate::hello_world_capnp::hello_world;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use std::net::ToSocketAddrs;
 
-use futures::AsyncReadExt;
+use tokio::io::AsyncReadExt;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = ::std::env::args().collect();

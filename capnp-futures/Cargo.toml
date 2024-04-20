@@ -19,6 +19,7 @@ capstone.workspace = true
 quickcheck = { version = "1", optional = true }
 tokio = { workspace = true, features = ["io-util"] }
 tokio-stream.workspace = true
+futures-util.workspace = true
 
 [dev-dependencies]
 capstone = { workspace = true, features = ["quickcheck"] }

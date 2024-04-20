@@ -134,14 +134,14 @@ impl AsyncWrite for Sender {
 
     fn poll_flush(
         self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
+        _: &mut task::Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_shutdown(
         self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
+        _: &mut task::Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
         let mut inner = self.inner.lock().unwrap();
         inner.write_end_closed = true;

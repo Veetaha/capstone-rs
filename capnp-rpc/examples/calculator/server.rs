@@ -27,8 +27,8 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crate::calculator_capnp::calculator;
 use capnp::capability::Promise;
 
-use futures::future;
-use futures::{AsyncReadExt, FutureExt, TryFutureExt};
+use futures_util::{FutureExt, TryFutureExt};
+use tokio::io::AsyncReadExt;
 
 struct ValueImpl {
     value: f64,

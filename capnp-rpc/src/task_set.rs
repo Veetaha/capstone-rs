@@ -18,11 +18,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use futures::channel::mpsc;
-use futures::stream::FuturesUnordered;
-use futures::{Future, FutureExt, Stream};
+use futures_util::stream::FuturesUnordered;
+use futures_util::FutureExt;
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio_stream::Stream;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -60,7 +62,7 @@ impl<E> Future for TaskInProgress<E> {
 
 #[must_use = "a TaskSet does nothing unless polled"]
 pub struct TaskSet<E> {
-    enqueued: Option<mpsc::UnboundedReceiver<EnqueuedTask<E>>>,
+    enqueued: Option<UnboundedReceiver<EnqueuedTask<E>>>,
     in_progress: FuturesUnordered<TaskInProgress<E>>,
     reaper: Rc<RefCell<Box<dyn TaskReaper<E>>>>,
 }
@@ -74,7 +76,7 @@ where
         E: 'static,
         E: ::std::fmt::Debug,
     {
-        let (sender, receiver) = mpsc::unbounded();
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let set = Self {
             enqueued: Some(receiver),
@@ -85,7 +87,7 @@ where
         // If the FuturesUnordered ever gets empty, its stream will terminate, which
         // is not what we want. So we make sure there is always at least one future in it.
         set.in_progress
-            .push(TaskInProgress::Task(Box::pin(::futures::future::pending())));
+            .push(TaskInProgress::Task(Box::pin(std::future::pending())));
 
         let handle = TaskSetHandle { sender };
 
@@ -95,7 +97,7 @@ where
 
 #[derive(Clone)]
 pub struct TaskSetHandle<E> {
-    sender: mpsc::UnboundedSender<EnqueuedTask<E>>,
+    sender: tokio::sync::mpsc::UnboundedSender<EnqueuedTask<E>>,
 }
 
 impl<E> TaskSetHandle<E>
@@ -106,11 +108,11 @@ where
     where
         F: Future<Output = Result<(), E>> + 'static,
     {
-        let _ = self.sender.unbounded_send(EnqueuedTask::Task(Box::pin(f)));
+        let _ = self.sender.send(EnqueuedTask::Task(Box::pin(f)));
     }
 
     pub fn terminate(&mut self, result: Result<(), E>) {
-        let _ = self.sender.unbounded_send(EnqueuedTask::Terminate(result));
+        let _ = self.sender.send(EnqueuedTask::Terminate(result));
     }
 }
 
@@ -138,7 +140,7 @@ where
         } = self.as_mut().get_mut()
         {
             loop {
-                match Pin::new(&mut *enqueued).poll_next(cx) {
+                match Pin::new(&mut *enqueued).poll_recv(cx) {
                     Poll::Pending => break,
                     Poll::Ready(None) => {
                         enqueued_stream_complete = true;

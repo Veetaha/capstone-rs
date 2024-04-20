@@ -22,6 +22,7 @@
 //! Asynchronous reading and writing of messages using the
 //! [packed stream encoding](https://capnproto.org/encoding.html#packing).
 
+use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -82,9 +83,9 @@ where
 {
     fn poll_read(
         mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        outbuf: &mut [u8],
-    ) -> Poll<std::result::Result<usize, std::io::Error>> {
+        cx: &mut Context<'_>,
+        outbuf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
         let Self {
             stage,
             inner,
@@ -97,10 +98,11 @@ where
         loop {
             match *stage {
                 PackedReadStage::Start => {
-                    match Pin::new(&mut *inner).poll_read(cx, &mut buf[*buf_pos..2])? {
+                    let mut reader = tokio::io::ReadBuf::new(&mut buf[*buf_pos..2]);
+                    match Pin::new(&mut *inner).poll_read(cx, &mut reader)? {
                         Poll::Pending => return Poll::Pending,
-                        Poll::Ready(n) => {
-                            *buf_pos += n;
+                        Poll::Ready(()) => {
+                            *buf_pos += reader.capacity() - reader.remaining();
                             if *buf_pos >= 2 {
                                 let tag = buf[0];
                                 let count = buf[1];
@@ -120,24 +122,26 @@ where
                     }
                 }
                 PackedReadStage::WritingZeroes => {
-                    let num_zeroes = std::cmp::min(outbuf.len(), *num_run_bytes_remaining);
+                    let num_zeroes = std::cmp::min(outbuf.remaining(), *num_run_bytes_remaining);
 
-                    for value in outbuf.iter_mut().take(num_zeroes) {
-                        *value = 0;
+                    for value in unsafe { outbuf.unfilled_mut().iter_mut().take(num_zeroes) } {
+                        *value = MaybeUninit::new(0_u8);
                     }
+                    outbuf.advance(num_zeroes);
                     if num_zeroes >= *num_run_bytes_remaining {
                         *buf_pos = 0;
                         *stage = PackedReadStage::Start;
                     } else {
                         *num_run_bytes_remaining -= num_zeroes;
                     }
-                    return Poll::Ready(Ok(num_zeroes));
+                    return Poll::Ready(Ok(()));
                 }
                 PackedReadStage::BufferingWord => {
-                    match Pin::new(&mut *inner).poll_read(cx, &mut buf[*buf_pos..*buf_size])? {
+                    let mut reader = tokio::io::ReadBuf::new(&mut buf[*buf_pos..*buf_size]);
+                    match Pin::new(&mut *inner).poll_read(cx, &mut reader)? {
                         Poll::Pending => return Poll::Pending,
-                        Poll::Ready(n) => {
-                            *buf_pos += n;
+                        Poll::Ready(()) => {
+                            *buf_pos += reader.capacity() - reader.remaining();
                             if *buf_pos >= *buf_size {
                                 *stage = PackedReadStage::DrainingBuffer;
                                 *buf_pos = 1;
@@ -146,12 +150,14 @@ where
                     }
                 }
                 PackedReadStage::DrainingBuffer => {
-                    let mut ii = 0;
                     let mut bitnum = *buf_pos - 1;
-                    while ii < outbuf.len() && bitnum < 8 {
+                    while outbuf.remaining() > 0 && bitnum < 8 {
                         let is_nonzero = (buf[0] & (1u8 << bitnum)) != 0;
-                        outbuf[ii] = buf[*buf_pos] & ((-i8::from(is_nonzero)) as u8);
-                        ii += 1;
+                        unsafe {
+                            outbuf.unfilled_mut()[0] =
+                                MaybeUninit::new(buf[*buf_pos] & ((-i8::from(is_nonzero)) as u8));
+                        }
+                        outbuf.advance(1);
                         *buf_pos += usize::from(is_nonzero);
                         bitnum += 1;
                     }
@@ -169,21 +175,26 @@ where
                     } else {
                         // We did not finish the word.
                     }
-                    return Poll::Ready(Ok(ii));
+                    return Poll::Ready(Ok(()));
                 }
                 PackedReadStage::WritingPassthrough => {
-                    let upper_bound = std::cmp::min(*num_run_bytes_remaining, outbuf.len());
+                    let upper_bound = std::cmp::min(*num_run_bytes_remaining, outbuf.remaining());
                     if upper_bound == 0 {
                         *stage = PackedReadStage::Start;
                     } else {
-                        match Pin::new(&mut *inner).poll_read(cx, &mut outbuf[0..upper_bound])? {
+                        let mut reader = outbuf.take(upper_bound);
+                        let prev_bound = reader.remaining();
+
+                        match Pin::new(&mut *inner).poll_read(cx, &mut reader)? {
                             Poll::Pending => return Poll::Pending,
-                            Poll::Ready(n) => {
+                            Poll::Ready(()) => {
+                                let n = prev_bound - reader.remaining();
                                 if n >= *num_run_bytes_remaining {
                                     *stage = PackedReadStage::Start;
                                 }
                                 *num_run_bytes_remaining -= n;
-                                return Poll::Ready(Ok(n));
+                                outbuf.advance(n);
+                                return Poll::Ready(Ok(()));
                             }
                         }
                     }
@@ -507,11 +518,11 @@ where
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
-    fn poll_close(
+    fn poll_shutdown(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<std::result::Result<(), std::io::Error>> {
-        Pin::new(&mut self.inner).poll_close(cx)
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 
@@ -520,8 +531,8 @@ pub mod test {
     use crate::serialize::test::{BlockingRead, BlockingWrite};
     use crate::serialize_packed::{PackedRead, PackedWrite};
     use capnp::message::ReaderSegments;
-    use futures::{AsyncReadExt, AsyncWriteExt};
     use quickcheck::{quickcheck, TestResult};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     pub fn check_unpacks_to(blocking_period: usize, packed: &[u8], unpacked: &[u8]) {
         let mut packed_read = PackedRead::new(crate::serialize::test::BlockingRead::new(
@@ -530,7 +541,11 @@ pub mod test {
         ));
 
         let mut bytes: Vec<u8> = vec![0; unpacked.len()];
-        futures::executor::block_on(Box::pin(packed_read.read_exact(&mut bytes))).expect("reading");
+
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(Box::pin(packed_read.read_exact(&mut bytes)))
+            .expect("reading");
 
         assert!(packed_read.inner.read.is_empty()); // nothing left to read
         assert_eq!(bytes, unpacked);
@@ -551,9 +566,14 @@ pub mod test {
                 &mut bytes[..],
                 write_blocking_period,
             ));
-            futures::executor::block_on(Box::pin(packed_write.write_all(unpacked)))
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(Box::pin(packed_write.write_all(unpacked)))
                 .expect("writing");
-            futures::executor::block_on(Box::pin(packed_write.flush())).expect("flushing");
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(Box::pin(packed_write.flush()))
+                .expect("flushing");
         }
 
         assert_eq!(bytes, packed);
@@ -642,23 +662,31 @@ pub mod test {
         let (mut read, segments) = {
             let cursor = std::io::Cursor::new(Vec::new());
             let mut writer = BlockingWrite::new(cursor, write_blocking_period);
-            futures::executor::block_on(Box::pin(crate::serialize_packed::write_message(
-                &mut writer,
-                &segments,
-            )))
-            .expect("writing");
-            futures::executor::block_on(Box::pin(writer.flush())).expect("writing");
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(Box::pin(crate::serialize_packed::write_message(
+                    &mut writer,
+                    &segments,
+                )))
+                .expect("writing");
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(Box::pin(writer.flush()))
+                .expect("writing");
 
             let mut cursor = writer.into_writer();
             cursor.set_position(0);
             (BlockingRead::new(cursor, read_blocking_period), segments)
         };
 
-        let message = futures::executor::block_on(Box::pin(
-            crate::serialize_packed::try_read_message(&mut read, Default::default()),
-        ))
-        .expect("reading")
-        .unwrap();
+        let message = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(Box::pin(crate::serialize_packed::try_read_message(
+                &mut read,
+                Default::default(),
+            )))
+            .expect("reading")
+            .unwrap();
         let message_segments = message.into_segments();
 
         TestResult::from_bool(segments.iter().enumerate().all(|(i, segment)| {

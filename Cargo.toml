@@ -45,7 +45,7 @@ tokio = { version = "1.37", features = [
     "macros",
     "sync",
 ] }
-tokio-util = { version = "0.7.4", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 tokio-stream = "0.1"
 capstone = { version = "0.18", path = "./capnp" }
 capstone-gen = { version = "0.18", path = "./capnpc" }
@@ -54,10 +54,7 @@ capstone-import = { version = "0.18", path = "./capnp-import" }
 capstone-macros = { version = "0.18", path = "./capnp-macros" }
 capstone-futures = { version = "0.18", path = "./capnp-futures" }
 async-byte-channel = { path = "./async-byte-channel" }
-futures = { version = "0.3.0", default-features = false, features = [
-    "std",
-    "async-await",
-] }
+futures-util = "0.3"
 syn = { version = "2.0", features = ["full"] }
 proc-macro2 = "1.0"
 quote = "1.0"

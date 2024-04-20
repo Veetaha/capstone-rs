@@ -23,8 +23,8 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
 use crate::hello_world_capnp::hello_world;
 
-use futures::AsyncReadExt;
 use std::net::ToSocketAddrs;
+use tokio::io::AsyncReadExt;
 
 struct HelloWorldImpl;
 
