@@ -123,14 +123,14 @@ fn test_promise(
     req.send().promise
 }
 
-async fn test(
+fn test(
     pool: &tokio::task::LocalSet,
     client: &test_interface::Client,
     i: u32,
     j: bool,
 ) -> Result<String, Error> {
     let fut = test_promise(client, i, j);
-    run_until(pool, fut).await
+    futures::executor::block_on(run_until(pool, fut))
 }
 
 // Lets us poll a future without consuming it
@@ -146,14 +146,14 @@ impl<'a, F: Future + Unpin> Future for PollOnce<'a, F> {
     }
 }
 
-async fn do_autoconnect_test<F>(wrap_client: F) -> capnp::Result<()>
+fn do_autoconnect_test<F>(pool: &mut LocalSet, wrap_client: F) -> capnp::Result<()>
 where
     F: Fn(test_interface::Client) -> test_interface::Client,
 {
-    let pool: LocalSet = LocalSet::new();
+    let guard = pool.enter();
+    
 
-    let (req3, fulfiller, promise1, promise2, promise4) = pool
-        .run_until(async {
+    let (req3, fulfiller, promise1, promise2, promise4) = {
             let connect_count = Rc::new(RefCell::new(0));
             let current_server = Rc::new(RefCell::new(TestInterfaceImpl::new(0)));
 
@@ -167,25 +167,24 @@ where
                 *c_server.borrow_mut() = server.clone();
                 let client: test_interface::Client = new_client(server);
                 Ok(client)
-            })
-            .unwrap();
+            })?;
             let client = wrap_client(c);
 
-            assert_eq!(test(&pool, &client, 123, true).await.unwrap(), "123 true 0");
+            assert_eq!(test(&pool, &client, 123, true).unwrap(), "123 true 0");
 
             current_server
                 .borrow()
                 .set_error(capnp::Error::disconnected("test1 disconnect".into()));
             assert_err!(
-                test(&pool, &client, 456, true).await.unwrap_err(),
+                test(&pool, &client, 456, true).unwrap_err(),
                 Error::disconnected("test1 disconnect".into())
             );
 
             assert_eq!(
-                test(&pool, &client, 789, false).await.unwrap(),
+                test(&pool, &client, 789, false).unwrap(),
                 "789 false 1"
             );
-            assert_eq!(test(&pool, &client, 21, true).await.unwrap(), "21 true 1");
+            assert_eq!(test(&pool, &client, 21, true).unwrap(), "21 true 1");
 
             {
                 // We cause two disconnect promises to be thrown concurrently. This should only cause the
@@ -206,28 +205,27 @@ where
                 // pool.run_until_stalled();
 
                 for _ in 0..31 {
-                    let _ = PollOnce(&mut promise1).await;
-                    let _ = PollOnce(&mut promise2).await;
+                    //let _ = futures::executor::block_on(PollOnce(&mut promise1));
+                    //let _ = futures::executor::block_on(PollOnce(&mut promise2));
+                    futures::executor::block_on(PollOnce(pool));
                 }
 
                 fulfiller
                     .send(Err(capnp::Error::disconnected("test2 disconnect".into())))
                     .unwrap();
                 assert_err!(
-                    run_until(&pool, promise1)
-                        .await
+                    futures::executor::block_on(run_until(&pool, promise1))
                         .expect_err("disconnect error"),
                     capnp::Error::disconnected("test2 disconnect".into())
                 );
                 assert_err!(
-                    run_until(&pool, promise2)
-                        .await
+                    futures::executor::block_on(run_until(&pool, promise2))
                         .expect_err("disconnect error"),
                     capnp::Error::disconnected("test2 disconnect".into())
                 );
             }
 
-            assert_eq!(test(&pool, &client, 43, false).await.unwrap(), "43 false 2");
+            assert_eq!(test(&pool, &client, 43, false).unwrap(), "43 false 2");
 
             // Start a couple calls that will block at the server end, plus an unsent request.
             let fulfiller = current_server.borrow().block();
@@ -250,8 +248,9 @@ where
             // pool.run_until_stalled();
 
             for _ in 0..31 {
-                let _ = PollOnce(&mut promise1).await;
-                let _ = PollOnce(&mut promise2).await;
+                //let _ = futures::executor::block_on(PollOnce(&mut promise1));
+                //let _ = futures::executor::block_on(PollOnce(&mut promise2));
+                futures::executor::block_on(PollOnce(pool));
             }
 
             // Now force a reconnect.
@@ -266,13 +265,12 @@ where
             // onto their own ref.
             //client = nullptr;
             (req3, fulfiller, promise1, promise2, promise4)
-        })
-        .await;
+        };
 
     // Everything we initiated should still finish.
     assert_err!(
-        run_until(&pool, promise4)
-            .await
+        futures::executor::block_on(run_until(&pool, promise4)
+    )
             .expect_err("disconnect error"),
         capnp::Error::disconnected("test3 disconnect".into())
     );
@@ -280,7 +278,7 @@ where
     // Send the request which we created before the disconnect. There are two behaviors we accept
     // as correct here: it may throw the disconnect exception, or it may automatically redirect to
     // the newly-reconnected destination.
-    match run_until(&pool, req3.send().promise).await {
+    match futures::executor::block_on(run_until(&pool, req3.send().promise)) {
         Ok(resp) => {
             assert_eq!(resp, "5656 true 3");
         }
@@ -292,17 +290,18 @@ where
     //KJ_EXPECT(!promise1.poll(ws));
     //KJ_EXPECT(!promise2.poll(ws));
     fulfiller.send(Ok(())).unwrap();
-    assert_eq!(run_until(&pool, promise1).await.unwrap(), "1212 true 2");
-    assert_eq!(run_until(&pool, promise2).await.unwrap(), "3434 false 2");
+    assert_eq!(futures::executor::block_on(run_until(&pool, promise1)).unwrap(), "1212 true 2");
+    assert_eq!(futures::executor::block_on(run_until(&pool, promise2)).unwrap(), "3434 false 2");
 
     Ok(())
 }
 
 /// autoReconnect() direct call (exercises newCall() / RequestHook)
-#[ignore]
+//#[ignore]
 #[tokio::test]
 async fn auto_reconnect_direct_call() {
-    do_autoconnect_test(|c| c).await.unwrap();
+    let mut pool = tokio::task::LocalSet::new();
+    do_autoconnect_test(&mut pool, |c| c).unwrap();
 }
 
 #[derive(Clone)]
@@ -334,7 +333,7 @@ impl test_capnp::bootstrap::Server for Bootstrap {
 }
 
 /// autoReconnect() through RPC (exercises call() / CallContextHook)
-#[ignore]
+//#[ignore]
 #[tokio::test]
 async fn auto_reconnect_rpc_call() {
     let (client_writer, server_reader) = async_byte_channel::channel();
@@ -363,11 +362,11 @@ async fn auto_reconnect_rpc_call() {
     let disconnector: capnp_rpc::Disconnector<capnp_rpc::rpc_twoparty_capnp::Side> =
         client_rpc_system.get_disconnector();
 
-    let pool = LocalSet::new();
+    let mut pool = LocalSet::new();
     spawn(&pool, client_rpc_system);
     spawn(&pool, server_rpc_system);
 
-    do_autoconnect_test(|c| {
+    do_autoconnect_test(&mut pool, |c| {
         b.set_interface(c);
         let req = client.test_interface_request();
         new_promise_client(req.send().promise.map(|resp| match resp {
@@ -375,9 +374,8 @@ async fn auto_reconnect_rpc_call() {
             Err(err) => Err(err),
         }))
     })
-    .await
     .unwrap();
-    pool.run_until(disconnector).await.unwrap();
+    futures::executor::block_on(pool.run_until(disconnector)).unwrap();
 }
 
 /// lazyAutoReconnect() initialies lazily
@@ -403,7 +401,7 @@ async fn lazy_auto_reconnect_test() {
     .unwrap();
 
     assert_eq!(*connect_count.borrow(), 1);
-    assert_eq!(test(&pool, &client, 123, true).await.unwrap(), "123 true 0");
+    assert_eq!(test(&pool, &client, 123, true).unwrap(), "123 true 0");
     assert_eq!(*connect_count.borrow(), 1);
 
     let c_server = current_server.clone();
@@ -420,10 +418,10 @@ async fn lazy_auto_reconnect_test() {
     });
 
     assert_eq!(*connect_count.borrow(), 1);
-    assert_eq!(test(&pool, &client, 123, true).await.unwrap(), "123 true 1");
+    assert_eq!(test(&pool, &client, 123, true).unwrap(), "123 true 1");
     assert_eq!(*connect_count.borrow(), 2);
     assert_eq!(
-        test(&pool, &client, 234, false).await.unwrap(),
+        test(&pool, &client, 234, false).unwrap(),
         "234 false 1"
     );
     assert_eq!(*connect_count.borrow(), 2);
@@ -432,14 +430,14 @@ async fn lazy_auto_reconnect_test() {
         .borrow()
         .set_error(Error::disconnected("test1 disconnect".into()));
     assert_err!(
-        test(&pool, &client, 345, true).await.unwrap_err(),
+        test(&pool, &client, 345, true).unwrap_err(),
         Error::disconnected("test1 disconnect".into())
     );
 
     // lazyAutoReconnect is only lazy on the first request, not on reconnects.
     assert_eq!(*connect_count.borrow(), 3);
     assert_eq!(
-        test(&pool, &client, 456, false).await.unwrap(),
+        test(&pool, &client, 456, false).unwrap(),
         "456 false 2"
     );
     assert_eq!(*connect_count.borrow(), 3);
