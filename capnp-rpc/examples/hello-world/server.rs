@@ -24,7 +24,6 @@ use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 use crate::hello_world_capnp::hello_world;
 
 use std::net::ToSocketAddrs;
-use tokio::io::AsyncReadExt;
 
 struct HelloWorldImpl;
 
@@ -64,8 +63,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 let (stream, _) = listener.accept().await?;
                 stream.set_nodelay(true)?;
-                let (reader, writer) =
-                    tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+                let (reader, writer) = stream.into_split();
                 let network = twoparty::VatNetwork::new(
                     reader,
                     writer,

@@ -130,7 +130,7 @@ fn test(
     j: bool,
 ) -> Result<String, Error> {
     let fut = test_promise(client, i, j);
-     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(pool, fut))})
+    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(run_until(pool, fut)))
 }
 
 // Lets us poll a future without consuming it
@@ -150,96 +150,49 @@ fn do_autoconnect_test<F>(pool: &mut LocalSet, wrap_client: F) -> capnp::Result<
 where
     F: Fn(test_interface::Client) -> test_interface::Client,
 {
-    let guard = pool.enter();
-    
+    let _guard = pool.enter();
 
     let (req3, fulfiller, promise1, promise2, promise4) = {
-            let connect_count = Rc::new(RefCell::new(0));
-            let current_server = Rc::new(RefCell::new(TestInterfaceImpl::new(0)));
+        let connect_count = Rc::new(RefCell::new(0));
+        let current_server = Rc::new(RefCell::new(TestInterfaceImpl::new(0)));
 
-            let c_server = current_server.clone();
-            let (c, _s) = auto_reconnect(move || {
-                let generation = *connect_count.borrow();
-                {
-                    *connect_count.borrow_mut() += 1;
-                }
-                let server = TestInterfaceImpl::new(generation);
-                *c_server.borrow_mut() = server.clone();
-                let client: test_interface::Client = new_client(server);
-                Ok(client)
-            })?;
-            let client = wrap_client(c);
-
-            assert_eq!(test(&pool, &client, 123, true).unwrap(), "123 true 0");
-
-            current_server
-                .borrow()
-                .set_error(capnp::Error::disconnected("test1 disconnect".into()));
-            assert_err!(
-                test(&pool, &client, 456, true).unwrap_err(),
-                Error::disconnected("test1 disconnect".into())
-            );
-
-            assert_eq!(
-                test(&pool, &client, 789, false).unwrap(),
-                "789 false 1"
-            );
-            assert_eq!(test(&pool, &client, 21, true).unwrap(), "21 true 1");
-
+        let c_server = current_server.clone();
+        let (c, _s) = auto_reconnect(move || {
+            let generation = *connect_count.borrow();
             {
-                // We cause two disconnect promises to be thrown concurrently. This should only cause the
-                // reconnector to reconnect once, not twice.
-                let fulfiller = current_server.borrow().block();
-                let promise1 = test_promise(&client, 32, false);
-                let promise2 = test_promise(&client, 43, true);
-                let mut promise1 = Promise::from_future(
-                    tokio::task::spawn_local(promise1)
-                        .unwrap_or_else(|_| Err(capnp::Error::failed("fail".to_string()))),
-                );
-                let mut promise2 = Promise::from_future(
-                    tokio::task::spawn_local(promise2)
-                        .unwrap_or_else(|_| Err(capnp::Error::failed("fail".to_string()))),
-                );
-
-                // tokio doesn't have this so we just poll them a bunch
-                // pool.run_until_stalled();
-
-                for _ in 0..31 {
-                    //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
-                    //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
-                     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(pool))});
-                }
-
-                fulfiller
-                    .send(Err(capnp::Error::disconnected("test2 disconnect".into())))
-                    .unwrap();
-                assert_err!(
-                     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise1))})
-                        .expect_err("disconnect error"),
-                    capnp::Error::disconnected("test2 disconnect".into())
-                );
-                assert_err!(
-                     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise2))})
-                        .expect_err("disconnect error"),
-                    capnp::Error::disconnected("test2 disconnect".into())
-                );
+                *connect_count.borrow_mut() += 1;
             }
+            let server = TestInterfaceImpl::new(generation);
+            *c_server.borrow_mut() = server.clone();
+            let client: test_interface::Client = new_client(server);
+            Ok(client)
+        })?;
+        let client = wrap_client(c);
 
-            assert_eq!(test(&pool, &client, 43, false).unwrap(), "43 false 2");
+        assert_eq!(test(&pool, &client, 123, true).unwrap(), "123 true 0");
 
-            // Start a couple calls that will block at the server end, plus an unsent request.
+        current_server
+            .borrow()
+            .set_error(capnp::Error::disconnected("test1 disconnect".into()));
+        assert_err!(
+            test(&pool, &client, 456, true).unwrap_err(),
+            Error::disconnected("test1 disconnect".into())
+        );
+
+        assert_eq!(test(&pool, &client, 789, false).unwrap(), "789 false 1");
+        assert_eq!(test(&pool, &client, 21, true).unwrap(), "21 true 1");
+
+        {
+            // We cause two disconnect promises to be thrown concurrently. This should only cause the
+            // reconnector to reconnect once, not twice.
             let fulfiller = current_server.borrow().block();
-
-            let promise1 = test_promise(&client, 1212, true);
-            let promise2 = test_promise(&client, 3434, false);
-            let mut req3 = client.foo_request();
-            req3.get().set_i(5656);
-            req3.get().set_j(true);
-            let mut promise1 = Promise::from_future(
+            let promise1 = test_promise(&client, 32, false);
+            let promise2 = test_promise(&client, 43, true);
+            let promise1 = Promise::from_future(
                 tokio::task::spawn_local(promise1)
                     .unwrap_or_else(|_| Err(capnp::Error::failed("fail".to_string()))),
             );
-            let mut promise2 = Promise::from_future(
+            let promise2 = Promise::from_future(
                 tokio::task::spawn_local(promise2)
                     .unwrap_or_else(|_| Err(capnp::Error::failed("fail".to_string()))),
             );
@@ -250,35 +203,89 @@ where
             for _ in 0..31 {
                 //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
                 //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
-                 tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(pool))});
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(PollOnce(pool))
+                });
             }
 
-            // Now force a reconnect.
-            current_server
-                .borrow()
-                .set_error(capnp::Error::disconnected("test3 disconnect".into()));
+            fulfiller
+                .send(Err(capnp::Error::disconnected("test2 disconnect".into())))
+                .unwrap();
+            assert_err!(
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(run_until(&pool, promise1))
+                })
+                .expect_err("disconnect error"),
+                capnp::Error::disconnected("test2 disconnect".into())
+            );
+            assert_err!(
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(run_until(&pool, promise2))
+                })
+                .expect_err("disconnect error"),
+                capnp::Error::disconnected("test2 disconnect".into())
+            );
+        }
 
-            // Initiate a request that will fail with DISCONNECTED.
-            let promise4 = test_promise(&client, 7878, false);
+        assert_eq!(test(&pool, &client, 43, false).unwrap(), "43 false 2");
 
-            // And throw away our capability entirely, just to make sure that anyone who needs it is holding
-            // onto their own ref.
-            //client = nullptr;
-            (req3, fulfiller, promise1, promise2, promise4)
-        };
+        // Start a couple calls that will block at the server end, plus an unsent request.
+        let fulfiller = current_server.borrow().block();
+
+        let promise1 = test_promise(&client, 1212, true);
+        let promise2 = test_promise(&client, 3434, false);
+        let mut req3 = client.foo_request();
+        req3.get().set_i(5656);
+        req3.get().set_j(true);
+        let promise1 = Promise::from_future(
+            tokio::task::spawn_local(promise1)
+                .unwrap_or_else(|_| Err(capnp::Error::failed("fail".to_string()))),
+        );
+        let promise2 = Promise::from_future(
+            tokio::task::spawn_local(promise2)
+                .unwrap_or_else(|_| Err(capnp::Error::failed("fail".to_string()))),
+        );
+
+        // tokio doesn't have this so we just poll them a bunch
+        // pool.run_until_stalled();
+
+        for _ in 0..31 {
+            //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise1));
+            //let _ =  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(PollOnce(&mut promise2));
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(PollOnce(pool))
+            });
+        }
+
+        // Now force a reconnect.
+        current_server
+            .borrow()
+            .set_error(capnp::Error::disconnected("test3 disconnect".into()));
+
+        // Initiate a request that will fail with DISCONNECTED.
+        let promise4 = test_promise(&client, 7878, false);
+
+        // And throw away our capability entirely, just to make sure that anyone who needs it is holding
+        // onto their own ref.
+        //client = nullptr;
+        (req3, fulfiller, promise1, promise2, promise4)
+    };
 
     // Everything we initiated should still finish.
     assert_err!(
-         tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise4))})
-    
-            .expect_err("disconnect error"),
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(run_until(&pool, promise4))
+        })
+        .expect_err("disconnect error"),
         capnp::Error::disconnected("test3 disconnect".into())
     );
 
     // Send the request which we created before the disconnect. There are two behaviors we accept
     // as correct here: it may throw the disconnect exception, or it may automatically redirect to
     // the newly-reconnected destination.
-    match  tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, req3.send().promise))}) {
+    match tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(run_until(&pool, req3.send().promise))
+    }) {
         Ok(resp) => {
             assert_eq!(resp, "5656 true 3");
         }
@@ -290,8 +297,20 @@ where
     //KJ_EXPECT(!promise1.poll(ws));
     //KJ_EXPECT(!promise2.poll(ws));
     fulfiller.send(Ok(())).unwrap();
-    assert_eq!( tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise1))}).unwrap(), "1212 true 2");
-    assert_eq!( tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(run_until(&pool, promise2))}).unwrap(), "3434 false 2");
+    assert_eq!(
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(run_until(&pool, promise1))
+        })
+        .unwrap(),
+        "1212 true 2"
+    );
+    assert_eq!(
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(run_until(&pool, promise2))
+        })
+        .unwrap(),
+        "3434 false 2"
+    );
 
     Ok(())
 }
@@ -375,7 +394,10 @@ async fn auto_reconnect_rpc_call() {
         }))
     })
     .unwrap();
-     tokio::task::block_in_place(|| {tokio::runtime::Handle::current().block_on(pool.run_until(disconnector))}).unwrap();
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(pool.run_until(disconnector))
+    })
+    .unwrap();
 }
 
 /// lazyAutoReconnect() initialies lazily
@@ -420,10 +442,7 @@ async fn lazy_auto_reconnect_test() {
     assert_eq!(*connect_count.borrow(), 1);
     assert_eq!(test(&pool, &client, 123, true).unwrap(), "123 true 1");
     assert_eq!(*connect_count.borrow(), 2);
-    assert_eq!(
-        test(&pool, &client, 234, false).unwrap(),
-        "234 false 1"
-    );
+    assert_eq!(test(&pool, &client, 234, false).unwrap(), "234 false 1");
     assert_eq!(*connect_count.borrow(), 2);
 
     current_server
@@ -436,9 +455,6 @@ async fn lazy_auto_reconnect_test() {
 
     // lazyAutoReconnect is only lazy on the first request, not on reconnects.
     assert_eq!(*connect_count.borrow(), 3);
-    assert_eq!(
-        test(&pool, &client, 456, false).unwrap(),
-        "456 false 2"
-    );
+    assert_eq!(test(&pool, &client, 456, false).unwrap(), "456 false 2");
     assert_eq!(*connect_count.borrow(), 3);
 }

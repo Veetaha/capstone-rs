@@ -22,8 +22,6 @@
 use crate::calculator_capnp::calculator;
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use tokio::io::AsyncReadExt;
-
 #[derive(Clone, Copy)]
 pub struct PowerFunction;
 
@@ -63,7 +61,7 @@ async fn try_main(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
         .expect("could not parse address");
     let stream = tokio::net::TcpStream::connect(&addr).await?;
     stream.set_nodelay(true)?;
-    let (reader, writer) = tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+    let (reader, writer) = stream.into_split();
 
     let network = Box::new(twoparty::VatNetwork::new(
         reader,
