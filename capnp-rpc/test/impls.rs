@@ -26,9 +26,8 @@ use crate::test_capnp::{
 
 use capnp::capability::Promise;
 use capnp::Error;
-use capnp_rpc::pry;
 
-use futures::{FutureExt, TryFutureExt};
+use futures_util::{FutureExt, TryFutureExt};
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -403,7 +402,7 @@ impl test_more_stuff::Server for TestMoreStuff {
 
         // Attach `cap` to the promise to make sure it is released.
         let attached = cap.clone();
-        let promise = Promise::from_future(::futures::future::pending().map_ok(|()| {
+        let promise = Promise::from_future(std::future::pending().map_ok(|()| {
             drop(attached);
         }));
 
@@ -548,7 +547,7 @@ impl test_more_stuff::Server for TestMoreStuff {
             results.push(request.send().promise);
         }
 
-        ::futures::future::try_join_all(results)
+        futures_util::future::try_join_all(results)
             .map_ok(|_| ())
             .await
     }
@@ -575,12 +574,12 @@ impl Drop for Handle {
 impl test_handle::Server for Handle {}
 
 pub struct TestCapDestructor {
-    fulfiller: Option<::futures::channel::oneshot::Sender<()>>,
+    fulfiller: Option<tokio::sync::oneshot::Sender<()>>,
     imp: TestInterface,
 }
 
 impl TestCapDestructor {
-    pub fn new(fulfiller: ::futures::channel::oneshot::Sender<()>) -> Self {
+    pub fn new(fulfiller: tokio::sync::oneshot::Sender<()>) -> Self {
         Self {
             fulfiller: Some(fulfiller),
             imp: TestInterface::new(),

@@ -18,11 +18,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use futures::future::Future;
-use futures::stream::Stream;
-use futures::AsyncRead;
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::io::AsyncRead;
+use tokio_stream::Stream;
 
 use capnp::{message, Error};
 

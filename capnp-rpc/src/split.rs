@@ -19,7 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use futures::{Future, FutureExt};
+use futures_util::FutureExt;
+use std::future::Future;
 
 use std::cell::RefCell;
 use std::rc::Rc;

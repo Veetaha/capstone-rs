@@ -26,7 +26,7 @@ mod tests {
     use crate::addressbook_capnp::{address_book, person};
     use capnp::message;
     use capnp_futures::serialize;
-    use futures::task::LocalSpawnExt;
+    use futures_util::TryFutureExt;
 
     fn populate_address_book(address_book: address_book::Builder) {
         let mut people = address_book.init_people(2);
@@ -85,14 +85,13 @@ mod tests {
     fn write_stream_and_read_queue() {
         use capnp;
         use capnp_futures;
-        use futures::future::FutureExt;
-        use futures::stream::StreamExt;
+        use futures_util::FutureExt;
+        use futures_util::StreamExt;
 
         use std::cell::Cell;
         use std::rc::Rc;
 
-        let mut pool = futures::executor::LocalPool::new();
-        let spawner = pool.spawner();
+        let mut pool = tokio::task::LocalSet::new();
 
         let (writer, reader) = async_byte_channel::channel();
         let (mut sender, write_queue) = capnp_futures::write_queue(writer);
@@ -106,23 +105,25 @@ mod tests {
                 let address_book = msg.get_root::<address_book::Reader>().unwrap();
                 read_address_book(address_book);
                 messages_read.set(messages_read.get() + 1);
-                futures::future::ready(())
+                std::future::ready(())
             }
         });
 
-        let io = futures::future::join(done_reading, write_queue.map(|_| ()));
+        let io = futures_util::future::join(done_reading, write_queue.map(|_| ()));
 
         let mut m = capnp::message::Builder::new_default();
         populate_address_book(m.init_root());
 
-        spawner.spawn_local(sender.send(m).map(|_| ())).unwrap();
+        pool.spawn_local(sender.send(m).map(|_| ()));
         drop(sender);
-        pool.run_until(io);
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(pool.run_until(io));
         assert_eq!(messages_read1.get(), 1);
     }
 
     fn fill_and_send_message(mut message: capnp::message::Builder<capnp::message::HeapAllocator>) {
-        use futures::{FutureExt, TryFutureExt};
+        use futures_util::{FutureExt, TryFutureExt};
 
         {
             let mut address_book = message.init_root::<address_book::Builder>();
@@ -130,7 +131,7 @@ mod tests {
             read_address_book(address_book.reborrow_as_reader());
         }
 
-        let mut pool = futures::executor::LocalPool::new();
+        let mut pool = tokio::task::LocalSet::new();
         let (stream0, stream1) = async_byte_channel::channel();
         let f0 = serialize::write_message(stream0, message)
             .map_err(|e| panic!("write error {:?}", e))
@@ -141,12 +142,15 @@ mod tests {
                 Some(m) => {
                     let address_book = m.get_root::<address_book::Reader>().unwrap();
                     read_address_book(address_book);
-                    futures::future::ready(Ok::<(), capnp::Error>(()))
+                    std::future::ready(Ok::<(), capnp::Error>(()))
                 }
             });
 
-        pool.spawner().spawn_local(f0).unwrap();
-        pool.run_until(f1).unwrap();
+        pool.spawn_local(f0);
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(pool.run_until(f1))
+            .unwrap();
     }
 
     #[test]

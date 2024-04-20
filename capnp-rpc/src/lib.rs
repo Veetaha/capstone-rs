@@ -61,12 +61,13 @@
 use capnp::capability::Promise;
 use capnp::private::capability::ClientHook;
 use capnp::Error;
-use futures::channel::oneshot;
-use futures::{Future, FutureExt, TryFutureExt};
+use futures_util::{FutureExt, TryFutureExt};
 use std::cell::RefCell;
+use std::future::Future;
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
 use std::task::{Context, Poll};
+use tokio::sync::oneshot;
 
 pub use crate::rpc::Disconnector;
 use crate::task_set::TaskSet;
@@ -397,7 +398,7 @@ where
 pub fn new_promise_client<T, F>(client_promise: F) -> T
 where
     T: ::capnp::capability::FromClientHook,
-    F: ::futures::Future<Output = Result<capnp::capability::Client, Error>>,
+    F: std::future::Future<Output = Result<capnp::capability::Client, Error>>,
     F: 'static + Unpin,
 {
     let mut queued_client = crate::queued::Client::new(None);
@@ -460,6 +461,6 @@ where
     }
 }
 
-fn canceled_to_error(_e: futures::channel::oneshot::Canceled) -> Error {
+fn canceled_to_error(_e: tokio::sync::oneshot::error::RecvError) -> Error {
     Error::failed("oneshot was canceled".to_string())
 }

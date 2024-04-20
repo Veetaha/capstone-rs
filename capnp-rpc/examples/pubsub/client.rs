@@ -22,8 +22,6 @@
 use crate::pubsub_capnp::{publisher, subscriber};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use futures::AsyncReadExt;
-
 struct SubscriberImpl;
 
 impl subscriber::Server<::capnp::text::Owned> for SubscriberImpl {
@@ -57,8 +55,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run_until(async move {
             let stream = tokio::net::TcpStream::connect(&addr).await?;
             stream.set_nodelay(true)?;
-            let (reader, writer) =
-                tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+            let (reader, writer) = stream.into_split();
             let rpc_network = Box::new(twoparty::VatNetwork::new(
                 reader,
                 writer,
@@ -74,7 +71,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             request.get().set_subscriber(sub);
 
             // Need to make sure not to drop the returned subscription object.
-            futures::future::try_join(rpc_system, request.send().promise).await?;
+            futures_util::future::try_join(rpc_system, request.send().promise).await?;
             Ok(())
         })
         .await

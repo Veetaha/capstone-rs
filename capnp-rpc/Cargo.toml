@@ -16,10 +16,9 @@ readme = "README.md"
 [lib]
 name = "capnp_rpc"
 
-[dependencies.futures]
-workspace = true
-
 [dependencies]
 capstone-futures.workspace = true
 capstone.workspace = true
 tokio.workspace = true
+tokio-stream.workspace = true
+futures-util.workspace = true

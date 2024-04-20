@@ -26,7 +26,7 @@ use std::rc::Rc;
 use crate::pubsub_capnp::{publisher, subscriber, subscription};
 use capnp_rpc::{rpc_twoparty_capnp, twoparty, RpcSystem};
 
-use futures::{AsyncReadExt, FutureExt, StreamExt};
+use futures_util::{FutureExt, StreamExt};
 
 struct SubscriberHandle {
     client: subscriber::Client<::capnp::text::Owned>,
@@ -133,8 +133,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 loop {
                     let (stream, _) = listener.accept().await?;
                     stream.set_nodelay(true)?;
-                    let (reader, writer) =
-                        tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+                    let (reader, writer) = stream.into_split();
                     let network = twoparty::VatNetwork::new(
                         reader,
                         writer,
@@ -149,15 +148,16 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             // Trigger sending approximately once per second.
-            let (tx, mut rx) = futures::channel::mpsc::unbounded::<()>();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<()>();
             std::thread::spawn(move || {
-                while let Ok(()) = tx.unbounded_send(()) {
+                while let Ok(()) = tx.send(()) {
                     std::thread::sleep(std::time::Duration::from_millis(1000));
                 }
             });
 
             let send_to_subscribers = async move {
-                while let Some(()) = rx.next().await {
+                let mut rx_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+                while let Some(()) = rx_stream.next().await {
                     let subscribers1 = subscribers.clone();
                     let subs = &mut subscribers.borrow_mut().subscribers;
                     for (&idx, subscriber) in subs.iter_mut() {
@@ -191,7 +191,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let _: ((), ()) =
-                futures::future::try_join(handle_incoming, send_to_subscribers).await?;
+                futures_util::future::try_join(handle_incoming, send_to_subscribers).await?;
             Ok(())
         })
         .await

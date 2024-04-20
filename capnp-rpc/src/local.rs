@@ -26,8 +26,8 @@ use capnp::traits::{Imbue, ImbueMut};
 use capnp::Error;
 use capnp::{any_pointer, message};
 
-use futures::channel::oneshot;
-use futures::TryFutureExt;
+use futures_util::TryFutureExt;
+use tokio::sync::oneshot;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -228,7 +228,7 @@ impl RequestHook for Request {
 
         let (pipeline_sender, mut pipeline) = crate::queued::Pipeline::new();
 
-        let p = futures::future::try_join(promise, results_done_promise).and_then(
+        let p = futures_util::future::try_join(promise, results_done_promise).and_then(
             move |((), results_done_hook)| {
                 pipeline_sender
                     .complete(Box::new(Pipeline::new(results_done_hook.add_ref()))

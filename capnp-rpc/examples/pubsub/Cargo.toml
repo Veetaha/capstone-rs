@@ -11,7 +11,8 @@ path = "main.rs"
 [dependencies]
 capstone.workspace = true
 capstone-import.workspace = true
-futures.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tokio-stream.workspace = true
+futures-util.workspace = true
 capstone-rpc.workspace = true

@@ -27,8 +27,7 @@ use capnp_rpc::{pry, rpc_twoparty_capnp, twoparty, RpcSystem};
 use crate::calculator_capnp::calculator;
 use capnp::capability::Promise;
 
-use futures::future;
-use futures::{AsyncReadExt, FutureExt, TryFutureExt};
+use futures_util::{FutureExt, TryFutureExt};
 
 struct ValueImpl {
     value: f64,
@@ -70,7 +69,7 @@ fn evaluate_impl(
         },
         calculator::expression::Call(call) => {
             let func = pry!(call.get_function());
-            let eval_params = future::try_join_all(
+            let eval_params = futures_util::future::try_join_all(
                 pry!(call.get_params())
                     .iter()
                     .map(|p| evaluate_impl(p, params)),
@@ -97,7 +96,7 @@ struct FunctionImpl {
 
 impl FunctionImpl {
     fn new(param_count: u32, body: calculator::expression::Reader) -> ::capnp::Result<Self> {
-        let mut result = Self {
+        let result = Self {
             param_count,
             body: ::capnp_rpc::ImbuedMessageBuilder::new(::capnp::message::HeapAllocator::new())
                 .into(),
@@ -223,8 +222,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 let (stream, _) = listener.accept().await?;
                 stream.set_nodelay(true)?;
-                let (reader, writer) =
-                    tokio_util::compat::TokioAsyncReadCompatExt::compat(stream).split();
+                let (reader, writer) = stream.into_split();
                 let network = twoparty::VatNetwork::new(
                     reader,
                     writer,
