@@ -15,3 +15,8 @@ interface TestInterface {
   setValue @0 (value :UInt64);
   getValue @1 () -> (value :UInt64);
 }
+
+interface GenericInterface(T) {
+  genericSetValue @0 (value :T);
+  genericGetValue @1 () -> (value :T);
+}
