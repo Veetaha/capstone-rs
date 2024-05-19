@@ -1,12 +1,302 @@
 //! Convenience wrappers of the datatypes defined in schema.capnp.
 
+use core::mem::size_of;
+use core::ops::Deref;
+
 use crate::dynamic_value;
-use crate::introspect::{self, RawBrandedStructSchema, RawEnumSchema};
+use crate::introspect::{self, RawBrandedStructSchema, RawEnumSchema, TypeVariant};
 use crate::private::layout;
 use crate::schema_capnp::{annotation, enumerant, field, node};
 use crate::struct_list;
-use crate::traits::{IndexMove, ListIter, ShortListIter};
+use crate::traits::{IndexMove, IntoInternalStructReader, ListIter, ShortListIter};
 use crate::Result;
+use std::collections::hash_map::HashMap;
+
+// Builds introspection information at runtime to allow building a StructSchema
+pub struct DynamicSchema {
+    msg: crate::message::Reader<crate::serialize::OwnedSegments>,
+    scopes: HashMap<(u64, String), u64>,
+    node_parents: HashMap<u64, u64>,
+    nodes: HashMap<u64, TypeVariant>,
+    root: u64,
+}
+
+const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
+const PARENT_MODULE_ANNOTATION_ID: u64 = 0xabee386cd1450364;
+const OPTION_ANNOTATION_ID: u64 = 0xabfef22c4ee1964e;
+
+impl DynamicSchema {
+    pub fn dynamic_field_marker(_: u16) -> crate::introspect::Type {
+        panic!("Should never be called!");
+    }
+    pub fn dynamic_annotation_marker(_: Option<u16>, _: u32) -> crate::introspect::Type {
+        panic!("Should never be called!");
+    }
+
+    fn get_indexes<'a>(
+        st: crate::schema_capnp::node::struct_::Reader<'a>,
+    ) -> (&'static mut [u16], &'static mut [u16]) {
+        let mut union_member_indexes = vec![];
+        let mut nonunion_member_indexes = vec![];
+        for (index, field) in st.get_fields().unwrap().iter().enumerate() {
+            let disc = field.get_discriminant_value();
+            if disc == crate::schema_capnp::field::NO_DISCRIMINANT {
+                nonunion_member_indexes.push(index as u16);
+            } else {
+                union_member_indexes.push((disc, index as u16));
+            }
+        }
+        union_member_indexes.sort();
+        let members_by_discriminant: Vec<u16> =
+            union_member_indexes.iter().map(|(i, d)| *d).collect();
+        let nonunion_member_indexes: &'static mut [u16] =
+            Box::leak(nonunion_member_indexes.into_boxed_slice());
+        let members_by_discriminant: &'static mut [u16] =
+            Box::leak(members_by_discriminant.into_boxed_slice());
+
+        (nonunion_member_indexes, members_by_discriminant)
+    }
+
+    // Capnproto-rust doesn't believe in lifetimes so we get to do manual memory management! IN RUST!
+    fn leak_chunk<T: crate::traits::SetPointerBuilder>(
+        value: T,
+        total_size: crate::MessageSize,
+    ) -> Result<&'static mut [crate::Word]> {
+        let allocator = crate::message::HeapAllocator::new()
+            .first_segment_words(total_size.word_count as u32 + 1);
+        let mut message = crate::message::Builder::new(allocator);
+        message.set_root(value)?;
+        let segment = message.get_segments_for_output()[0];
+        if segment.len() % 8 != 0 {
+            panic!("Segment invalid size!");
+        }
+        let boxed = unsafe {
+            let p = std::alloc::alloc(std::alloc::Layout::from_size_align_unchecked(
+                segment.len(),
+                8,
+            ));
+            std::slice::from_raw_parts_mut(p, segment.len()).copy_from_slice(segment);
+            Box::from_raw(std::slice::from_raw_parts_mut(
+                p as *mut crate::Word,
+                segment.len() / 8,
+            ))
+        };
+        Ok(Box::leak(boxed))
+    }
+
+    fn process_node<'a>(
+        nodes: &mut HashMap<u64, TypeVariant>,
+        id: u64,
+        root: &mut u64,
+        scopes: &mut HashMap<(u64, String), u64>,
+        node_map: &HashMap<u64, crate::schema_capnp::node::Reader<'a>>,
+    ) -> Result<()> {
+        let node = &node_map[&id];
+
+        for nested in node.get_nested_nodes()? {
+            scopes.insert((id, nested.get_name()?.to_string()?), nested.get_id());
+        }
+
+        match node.which()? {
+            node::File(()) => {
+                *root = node.get_id();
+            }
+            node::Struct(st) => {
+                let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
+                let leak = Self::leak_chunk(*node, node.total_size()?)?;
+                let raw = Box::leak(Box::new(introspect::RawStructSchema {
+                    encoded_node: leak,
+                    nonunion_members: nonunion_member_indexes,
+                    members_by_discriminant: members_by_discriminant,
+                }));
+
+                let schema = crate::introspect::RawBrandedStructSchema {
+                    generic: raw,
+                    field_types: Self::dynamic_field_marker,
+                    annotation_types: Self::dynamic_annotation_marker,
+                };
+
+                // If this is invalid somehow, explode early.
+                let test: StructSchema = schema.into();
+
+                nodes.insert(id, TypeVariant::Struct(schema));
+            }
+            node::Const(c) => {
+                match c.get_type()?.which()? {
+                    crate::schema_capnp::type_::Which::Void(_) => {
+                        nodes.insert(id, TypeVariant::Void)
+                    }
+                    crate::schema_capnp::type_::Which::Bool(_) => {
+                        nodes.insert(id, TypeVariant::Bool)
+                    }
+                    crate::schema_capnp::type_::Which::Int8(_) => {
+                        nodes.insert(id, TypeVariant::Int8)
+                    }
+                    crate::schema_capnp::type_::Which::Int16(_) => {
+                        nodes.insert(id, TypeVariant::Int16)
+                    }
+                    crate::schema_capnp::type_::Which::Int32(_) => {
+                        nodes.insert(id, TypeVariant::Int32)
+                    }
+                    crate::schema_capnp::type_::Which::Int64(_) => {
+                        nodes.insert(id, TypeVariant::Int64)
+                    }
+                    crate::schema_capnp::type_::Which::Uint8(_) => {
+                        nodes.insert(id, TypeVariant::UInt8)
+                    }
+                    crate::schema_capnp::type_::Which::Uint16(_) => {
+                        nodes.insert(id, TypeVariant::UInt16)
+                    }
+                    crate::schema_capnp::type_::Which::Uint32(_) => {
+                        nodes.insert(id, TypeVariant::UInt32)
+                    }
+                    crate::schema_capnp::type_::Which::Uint64(_) => {
+                        nodes.insert(id, TypeVariant::UInt64)
+                    }
+                    crate::schema_capnp::type_::Which::Float32(_) => {
+                        nodes.insert(id, TypeVariant::Float32)
+                    }
+                    crate::schema_capnp::type_::Which::Float64(_) => {
+                        nodes.insert(id, TypeVariant::Float64)
+                    }
+                    crate::schema_capnp::type_::Which::Text(_) => {
+                        nodes.insert(id, TypeVariant::Text)
+                    }
+                    crate::schema_capnp::type_::Which::Data(_) => {
+                        nodes.insert(id, TypeVariant::Data)
+                    }
+                    crate::schema_capnp::type_::Which::List(_) => todo!(),
+                    crate::schema_capnp::type_::Which::Enum(_) => todo!(),
+                    crate::schema_capnp::type_::Which::Struct(_) => todo!(),
+                    crate::schema_capnp::type_::Which::Interface(_) => todo!(),
+                    crate::schema_capnp::type_::Which::AnyPointer(_) => todo!(),
+                };
+            }
+            node::Annotation(_) => (), // TODO: process annotations
+            node::Enum(_) => {
+                let leak = Self::leak_chunk(*node, node.total_size()?)?;
+                nodes.insert(
+                    id,
+                    TypeVariant::Enum(RawEnumSchema {
+                        encoded_node: leak,
+                        annotation_types: Self::dynamic_annotation_marker,
+                    }),
+                );
+            }
+            node::Interface(_) => {
+                nodes.insert(id, TypeVariant::Capability);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn new(msg: crate::message::Reader<crate::serialize::OwnedSegments>) -> Result<Self> {
+        let mut this = Self {
+            msg,
+            scopes: HashMap::new(),
+            node_parents: HashMap::new(),
+            nodes: HashMap::new(),
+            root: 0,
+        };
+
+        let request: crate::schema_capnp::code_generator_request::Reader = this.msg.get_root()?;
+        let mut node_map: HashMap<u64, crate::schema_capnp::node::Reader> = HashMap::new();
+
+        for node in request.get_nodes()? {
+            node_map.insert(node.get_id(), node);
+            this.node_parents.insert(node.get_id(), node.get_scope_id());
+        }
+
+        // Fix up "anonymous" method params and results scopes.
+        for node in request.get_nodes()? {
+            if let Ok(crate::schema_capnp::node::Interface(interface_reader)) = node.which() {
+                for method in interface_reader.get_methods()? {
+                    let param_struct_type = method.get_param_struct_type();
+                    if this.node_parents.get(&param_struct_type) == Some(&0) {
+                        this.node_parents.insert(param_struct_type, node.get_id());
+                    }
+                    let result_struct_type = method.get_result_struct_type();
+                    if this.node_parents.get(&result_struct_type) == Some(&0) {
+                        this.node_parents.insert(result_struct_type, node.get_id());
+                    }
+                }
+            }
+        }
+
+        for node in request.get_nodes()? {
+            Self::process_node(
+                &mut this.nodes,
+                node.get_id(),
+                &mut this.root,
+                &mut this.scopes,
+                &node_map,
+            )?;
+        }
+        Ok(this)
+    }
+    pub fn get_type_by_scope(&self, scope: Vec<String>) -> Option<&TypeVariant> {
+        let mut parent = self.root;
+        let mut result = None;
+
+        for name in scope {
+            let key = &(parent, name);
+            result = self.scopes.get(key);
+            if let Some(x) = result {
+                parent = *x;
+            } else {
+                return None;
+            }
+        }
+
+        if let Some(k) = result {
+            self.nodes.get(k)
+        } else {
+            None
+        }
+    }
+}
+
+impl std::ops::Drop for DynamicSchema {
+    fn drop(&mut self) {
+        // To clean up our mess of memory we have to iterate through all our types
+        // and start re-capturing the raw pointers into boxes, like trying to herd
+        // a bunch of extremely unsafe squirrels that got loose.
+
+        for (id, v) in &mut self.nodes {
+            match v {
+                TypeVariant::Struct(s) => {
+                    let _ = unsafe {
+                        Box::from_raw(
+                            s.generic.encoded_node as *const [crate::Word] as *mut [crate::Word],
+                        )
+                    };
+                    let _ = unsafe {
+                        Box::from_raw(
+                            s.generic.members_by_discriminant as *const [u16] as *mut [u16],
+                        )
+                    };
+                    let _ = unsafe {
+                        Box::from_raw(s.generic.nonunion_members as *const [u16] as *mut [u16])
+                    };
+                    let _ = unsafe {
+                        Box::from_raw(
+                            s.generic as *const crate::introspect::RawStructSchema
+                                as *mut crate::introspect::RawStructSchema,
+                        )
+                    };
+                }
+                TypeVariant::Enum(e) => {
+                    let _ = unsafe {
+                        Box::from_raw(e.encoded_node as *const [crate::Word] as *mut [crate::Word])
+                    };
+                }
+                TypeVariant::List(_) => todo!(),
+                _ => (), // do nothing unless it's something we allocated memory for
+            }
+        }
+    }
+}
 
 /// A struct node, with generics applied.
 #[derive(Clone, Copy)]
@@ -129,7 +419,55 @@ impl Field {
     }
 
     pub fn get_type(&self) -> introspect::Type {
-        (self.parent.raw.field_types)(self.index)
+        if self.parent.raw.field_types == DynamicSchema::dynamic_field_marker {
+            let mut found: Option<crate::schema_capnp::type_::Reader> = None;
+            for (index, field) in self.parent.get_fields().unwrap().iter().enumerate() {
+                if index as u16 == self.index {
+                    found = match field.get_proto().which().unwrap() {
+                        field::Slot(slot) => slot.get_type().ok(),
+                        field::Group(group) => {
+                            panic!("don't know how to do groups yet");
+                        }
+                    };
+                }
+            }
+
+            // If anything goes wrong we have to panic anyway
+            match found.unwrap().which().unwrap() {
+                crate::schema_capnp::type_::Which::Void(_) => introspect::TypeVariant::Void,
+                crate::schema_capnp::type_::Which::Bool(_) => introspect::TypeVariant::Bool,
+                crate::schema_capnp::type_::Which::Int8(_) => introspect::TypeVariant::Int8,
+                crate::schema_capnp::type_::Which::Int16(_) => introspect::TypeVariant::Int16,
+                crate::schema_capnp::type_::Which::Int32(_) => introspect::TypeVariant::Int32,
+                crate::schema_capnp::type_::Which::Int64(_) => introspect::TypeVariant::Int64,
+                crate::schema_capnp::type_::Which::Uint8(_) => introspect::TypeVariant::UInt8,
+                crate::schema_capnp::type_::Which::Uint16(_) => introspect::TypeVariant::UInt16,
+                crate::schema_capnp::type_::Which::Uint32(_) => introspect::TypeVariant::UInt32,
+                crate::schema_capnp::type_::Which::Uint64(_) => introspect::TypeVariant::UInt64,
+                crate::schema_capnp::type_::Which::Float32(_) => introspect::TypeVariant::Float32,
+                crate::schema_capnp::type_::Which::Float64(_) => introspect::TypeVariant::Float64,
+                crate::schema_capnp::type_::Which::Text(_) => introspect::TypeVariant::Text,
+                crate::schema_capnp::type_::Which::Data(_) => introspect::TypeVariant::Data,
+                crate::schema_capnp::type_::Which::List(t) => {
+                    panic!("aaa");
+                }
+                crate::schema_capnp::type_::Which::Enum(raw) => {
+                    panic!("aaa");
+                }
+                crate::schema_capnp::type_::Which::Struct(st) => {
+                    panic!("aaa");
+                }
+                crate::schema_capnp::type_::Which::Interface(_) => {
+                    introspect::TypeVariant::Capability
+                }
+                crate::schema_capnp::type_::Which::AnyPointer(_) => {
+                    introspect::TypeVariant::AnyPointer
+                }
+            }
+            .into()
+        } else {
+            (self.parent.raw.field_types)(self.index)
+        }
     }
 
     pub fn get_index(&self) -> u16 {
@@ -399,7 +737,12 @@ impl AnnotationList {
 
     pub fn get(self, index: u32) -> Annotation {
         let proto = self.annotations.get(index);
-        let ty = (self.get_annotation_type)(self.child_index, index);
+        let ty = if self.get_annotation_type != DynamicSchema::dynamic_annotation_marker {
+            (self.get_annotation_type)(self.child_index, index)
+        } else {
+            panic!("aaa");
+        };
+
         Annotation { proto, ty }
     }
 
