@@ -25,11 +25,16 @@ pub struct DynamicSchema {
 //const PARENT_MODULE_ANNOTATION_ID: u64 = 0xabee386cd1450364;
 //const OPTION_ANNOTATION_ID: u64 = 0xabfef22c4ee1964e;
 
+#[no_mangle]
+#[inline(never)]
 fn dynamic_field_marker(_: u16) -> crate::introspect::Type {
-    panic!("Should never be called!");
+    panic!("dynamic_field_marker should never be called!");
 }
+
+#[no_mangle]
+#[inline(never)]
 fn dynamic_annotation_marker(_: Option<u16>, _: u32) -> crate::introspect::Type {
-    panic!("Should never be called!");
+    panic!("dynamic_annotation_marker should never be called!");
 }
 
 #[cfg(all(feature = "std", feature = "alloc"))]
@@ -418,6 +423,7 @@ impl Field {
     }
 
     pub fn get_type(&self) -> introspect::Type {
+        #[allow(clippy::fn_address_comparisons)]
         if self.parent.raw.field_types == dynamic_field_marker {
             let mut found: Option<crate::schema_capnp::type_::Reader> = None;
             for (index, field) in self.parent.get_fields().unwrap().iter().enumerate() {
@@ -736,6 +742,7 @@ impl AnnotationList {
 
     pub fn get(self, index: u32) -> Annotation {
         let proto = self.annotations.get(index);
+        #[allow(clippy::fn_address_comparisons)]
         let ty = if self.get_annotation_type != dynamic_annotation_marker {
             (self.get_annotation_type)(self.child_index, index)
         } else {
