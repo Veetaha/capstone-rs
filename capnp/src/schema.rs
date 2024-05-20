@@ -1,17 +1,17 @@
 //! Convenience wrappers of the datatypes defined in schema.capnp.
 
-use core::mem::size_of;
-use core::ops::Deref;
-
 use crate::dynamic_value;
 use crate::introspect::{self, RawBrandedStructSchema, RawEnumSchema, TypeVariant};
 use crate::private::layout;
 use crate::schema_capnp::{annotation, enumerant, field, node};
 use crate::struct_list;
-use crate::traits::{IndexMove, IntoInternalStructReader, ListIter, ShortListIter};
+use crate::traits::{IndexMove, ListIter, ShortListIter};
 use crate::Result;
+
+#[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
 
+#[cfg(feature = "std")]
 // Builds introspection information at runtime to allow building a StructSchema
 pub struct DynamicSchema {
     msg: crate::message::Reader<crate::serialize::OwnedSegments>,
@@ -21,18 +21,19 @@ pub struct DynamicSchema {
     root: u64,
 }
 
-const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
-const PARENT_MODULE_ANNOTATION_ID: u64 = 0xabee386cd1450364;
-const OPTION_ANNOTATION_ID: u64 = 0xabfef22c4ee1964e;
+//const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
+//const PARENT_MODULE_ANNOTATION_ID: u64 = 0xabee386cd1450364;
+//const OPTION_ANNOTATION_ID: u64 = 0xabfef22c4ee1964e;
 
+fn dynamic_field_marker(_: u16) -> crate::introspect::Type {
+    panic!("Should never be called!");
+}
+fn dynamic_annotation_marker(_: Option<u16>, _: u32) -> crate::introspect::Type {
+    panic!("Should never be called!");
+}
+
+#[cfg(feature = "std")]
 impl DynamicSchema {
-    pub fn dynamic_field_marker(_: u16) -> crate::introspect::Type {
-        panic!("Should never be called!");
-    }
-    pub fn dynamic_annotation_marker(_: Option<u16>, _: u32) -> crate::introspect::Type {
-        panic!("Should never be called!");
-    }
-
     fn get_indexes<'a>(
         st: crate::schema_capnp::node::struct_::Reader<'a>,
     ) -> (&'static mut [u16], &'static mut [u16]) {
@@ -48,7 +49,7 @@ impl DynamicSchema {
         }
         union_member_indexes.sort();
         let members_by_discriminant: Vec<u16> =
-            union_member_indexes.iter().map(|(i, d)| *d).collect();
+            union_member_indexes.iter().map(|(_, d)| *d).collect();
         let nonunion_member_indexes: &'static mut [u16] =
             Box::leak(nonunion_member_indexes.into_boxed_slice());
         let members_by_discriminant: &'static mut [u16] =
@@ -112,12 +113,9 @@ impl DynamicSchema {
 
                 let schema = crate::introspect::RawBrandedStructSchema {
                     generic: raw,
-                    field_types: Self::dynamic_field_marker,
-                    annotation_types: Self::dynamic_annotation_marker,
+                    field_types: dynamic_field_marker,
+                    annotation_types: dynamic_annotation_marker,
                 };
-
-                // If this is invalid somehow, explode early.
-                let test: StructSchema = schema.into();
 
                 nodes.insert(id, TypeVariant::Struct(schema));
             }
@@ -179,7 +177,7 @@ impl DynamicSchema {
                     id,
                     TypeVariant::Enum(RawEnumSchema {
                         encoded_node: leak,
-                        annotation_types: Self::dynamic_annotation_marker,
+                        annotation_types: dynamic_annotation_marker,
                     }),
                 );
             }
@@ -257,13 +255,14 @@ impl DynamicSchema {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::ops::Drop for DynamicSchema {
     fn drop(&mut self) {
         // To clean up our mess of memory we have to iterate through all our types
         // and start re-capturing the raw pointers into boxes, like trying to herd
         // a bunch of extremely unsafe squirrels that got loose.
 
-        for (id, v) in &mut self.nodes {
+        for (_, v) in &mut self.nodes {
             match v {
                 TypeVariant::Struct(s) => {
                     let _ = unsafe {
@@ -419,13 +418,13 @@ impl Field {
     }
 
     pub fn get_type(&self) -> introspect::Type {
-        if self.parent.raw.field_types == DynamicSchema::dynamic_field_marker {
+        if self.parent.raw.field_types == dynamic_field_marker {
             let mut found: Option<crate::schema_capnp::type_::Reader> = None;
             for (index, field) in self.parent.get_fields().unwrap().iter().enumerate() {
                 if index as u16 == self.index {
                     found = match field.get_proto().which().unwrap() {
                         field::Slot(slot) => slot.get_type().ok(),
-                        field::Group(group) => {
+                        field::Group(_) => {
                             panic!("don't know how to do groups yet");
                         }
                     };
@@ -448,13 +447,13 @@ impl Field {
                 crate::schema_capnp::type_::Which::Float64(_) => introspect::TypeVariant::Float64,
                 crate::schema_capnp::type_::Which::Text(_) => introspect::TypeVariant::Text,
                 crate::schema_capnp::type_::Which::Data(_) => introspect::TypeVariant::Data,
-                crate::schema_capnp::type_::Which::List(t) => {
+                crate::schema_capnp::type_::Which::List(_) => {
                     panic!("aaa");
                 }
-                crate::schema_capnp::type_::Which::Enum(raw) => {
+                crate::schema_capnp::type_::Which::Enum(_) => {
                     panic!("aaa");
                 }
-                crate::schema_capnp::type_::Which::Struct(st) => {
+                crate::schema_capnp::type_::Which::Struct(_) => {
                     panic!("aaa");
                 }
                 crate::schema_capnp::type_::Which::Interface(_) => {
@@ -737,7 +736,7 @@ impl AnnotationList {
 
     pub fn get(self, index: u32) -> Annotation {
         let proto = self.annotations.get(index);
-        let ty = if self.get_annotation_type != DynamicSchema::dynamic_annotation_marker {
+        let ty = if self.get_annotation_type != dynamic_annotation_marker {
             (self.get_annotation_type)(self.child_index, index)
         } else {
             panic!("aaa");

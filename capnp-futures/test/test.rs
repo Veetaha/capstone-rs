@@ -26,7 +26,6 @@ mod tests {
     use crate::addressbook_capnp::{address_book, person};
     use capnp::message;
     use capnp_futures::serialize;
-    use futures_util::TryFutureExt;
 
     fn populate_address_book(address_book: address_book::Builder) {
         let mut people = address_book.init_people(2);
@@ -131,7 +130,7 @@ mod tests {
             read_address_book(address_book.reborrow_as_reader());
         }
 
-        let mut pool = tokio::task::LocalSet::new();
+        let pool = tokio::task::LocalSet::new();
         let (stream0, stream1) = async_byte_channel::channel();
         let f0 = serialize::write_message(stream0, message)
             .map_err(|e| panic!("write error {:?}", e))

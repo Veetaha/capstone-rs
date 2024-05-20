@@ -201,7 +201,7 @@ where
             // pool.run_until_stalled();
 
             for _ in 0..31 {
-                tokio::task::block_in_place(|| {
+                let _ = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(PollOnce(pool))
                 });
             }
@@ -248,7 +248,7 @@ where
         // pool.run_until_stalled();
 
         for _ in 0..31 {
-            tokio::task::block_in_place(|| {
+            let _ = tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(PollOnce(pool))
             });
         }
