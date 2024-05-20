@@ -39,8 +39,8 @@ fn dynamic_annotation_marker(_: Option<u16>, _: u32) -> crate::introspect::Type 
 
 #[cfg(all(feature = "std", feature = "alloc"))]
 impl DynamicSchema {
-    fn get_indexes<'a>(
-        st: crate::schema_capnp::node::struct_::Reader<'a>,
+    fn get_indexes(
+        st: crate::schema_capnp::node::struct_::Reader,
     ) -> (&'static mut [u16], &'static mut [u16]) {
         let mut union_member_indexes = vec![];
         let mut nonunion_member_indexes = vec![];
@@ -90,12 +90,12 @@ impl DynamicSchema {
         Ok(Box::leak(boxed))
     }
 
-    fn process_node<'a>(
+    fn process_node(
         nodes: &mut HashMap<u64, TypeVariant>,
         id: u64,
         root: &mut u64,
         scopes: &mut HashMap<(u64, String), u64>,
-        node_map: &HashMap<u64, crate::schema_capnp::node::Reader<'a>>,
+        node_map: &HashMap<u64, crate::schema_capnp::node::Reader>,
     ) -> Result<()> {
         let node = &node_map[&id];
 
@@ -113,7 +113,7 @@ impl DynamicSchema {
                 let raw = Box::leak(Box::new(introspect::RawStructSchema {
                     encoded_node: leak,
                     nonunion_members: nonunion_member_indexes,
-                    members_by_discriminant: members_by_discriminant,
+                    members_by_discriminant,
                 }));
 
                 let schema = crate::introspect::RawBrandedStructSchema {
@@ -267,7 +267,7 @@ impl std::ops::Drop for DynamicSchema {
         // and start re-capturing the raw pointers into boxes, like trying to herd
         // a bunch of extremely unsafe squirrels that got loose.
 
-        for (_, v) in &mut self.nodes {
+        for v in self.nodes.values_mut() {
             match v {
                 TypeVariant::Struct(s) => {
                     let _ = unsafe {
