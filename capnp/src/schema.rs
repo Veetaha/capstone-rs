@@ -11,7 +11,7 @@ use crate::Result;
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "alloc"))]
 // Builds introspection information at runtime to allow building a StructSchema
 pub struct DynamicSchema {
     msg: crate::message::Reader<crate::serialize::OwnedSegments>,
@@ -32,7 +32,7 @@ fn dynamic_annotation_marker(_: Option<u16>, _: u32) -> crate::introspect::Type 
     panic!("Should never be called!");
 }
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "alloc"))]
 impl DynamicSchema {
     fn get_indexes<'a>(
         st: crate::schema_capnp::node::struct_::Reader<'a>,
@@ -255,7 +255,7 @@ impl DynamicSchema {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "alloc"))]
 impl std::ops::Drop for DynamicSchema {
     fn drop(&mut self) {
         // To clean up our mess of memory we have to iterate through all our types
