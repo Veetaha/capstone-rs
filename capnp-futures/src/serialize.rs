@@ -274,7 +274,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_read_segment_table() {
-        let mut exec = tokio::task::LocalSet::new();
+        let exec = tokio::task::LocalSet::new();
         let mut buf = vec![];
 
         buf.extend(
@@ -385,7 +385,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_read_invalid_segment_table() {
-        let mut exec = tokio::task::LocalSet::new();
+        let exec = tokio::task::LocalSet::new();
         let mut buf = vec![];
 
         buf.extend([0, 2, 0, 0]); // 513 segments
@@ -433,7 +433,7 @@ pub mod test {
     }
 
     fn construct_segment_table(segments: &[&[u8]]) -> Vec<u8> {
-        let mut exec = tokio::task::LocalSet::new();
+        let exec = tokio::task::LocalSet::new();
         let mut buf = vec![];
         tokio::runtime::Runtime::new()
             .unwrap()

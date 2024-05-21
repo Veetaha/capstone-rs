@@ -1,6 +1,6 @@
 capnp_import::capnp_import!("tests/test_schema.capnp");
 
-use capnp_macros::{capnp_build, capnproto_rpc};
+use capnp_macros::capnproto_rpc;
 use test_schema_capnp::generic_interface;
 
 #[derive(Default)]
