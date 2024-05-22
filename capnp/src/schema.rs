@@ -175,7 +175,7 @@ impl DynamicSchema {
                     crate::schema_capnp::type_::Which::AnyPointer(_) => todo!(),
                 };
             }
-            node::Annotation(_) => (), // TODO: process annotations
+            node::Annotation(_) => eprintln!("Skipped annotation!"), // TODO: process annotations
             node::Enum(_) => {
                 let leak = Self::leak_chunk(*node, node.total_size()?)?;
                 nodes.insert(
