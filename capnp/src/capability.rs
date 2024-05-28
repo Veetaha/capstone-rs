@@ -306,7 +306,7 @@ pub trait FromTypelessPipeline {
 
 /// Trait implemented (via codegen) by all user-defined capability client types.
 #[cfg(feature = "alloc")]
-pub trait FromClientHook {
+pub trait FromClientHook: crate::introspect::Introspect {
     /// Wraps a client hook to create a new client.
     fn new(hook: Box<dyn ClientHook>) -> Self;
 

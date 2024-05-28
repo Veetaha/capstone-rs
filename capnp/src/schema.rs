@@ -1,7 +1,9 @@
 //! Convenience wrappers of the datatypes defined in schema.capnp.
 
 use crate::dynamic_value;
-use crate::introspect::{self, RawBrandedStructSchema, RawEnumSchema, TypeVariant};
+use crate::introspect::{
+    self, RawBrandedStructSchema, RawCapabilitySchema, RawEnumSchema, TypeVariant,
+};
 use crate::private::layout;
 use crate::schema_capnp::{annotation, enumerant, field, node};
 use crate::struct_list;
@@ -187,7 +189,11 @@ impl DynamicSchema {
                 );
             }
             node::Interface(_) => {
-                nodes.insert(id, TypeVariant::Capability);
+                let leak = Self::leak_chunk(*node, node.total_size()?)?;
+                nodes.insert(
+                    id,
+                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: leak }),
+                );
             }
         }
 
@@ -293,6 +299,11 @@ impl std::ops::Drop for DynamicSchema {
                 TypeVariant::Enum(e) => {
                     let _ = unsafe {
                         Box::from_raw(e.encoded_node as *const [crate::Word] as *mut [crate::Word])
+                    };
+                }
+                TypeVariant::Capability(c) => {
+                    let _ = unsafe {
+                        Box::from_raw(c.encoded_node as *const [crate::Word] as *mut [crate::Word])
                     };
                 }
                 TypeVariant::List(_) => todo!(),
@@ -463,7 +474,8 @@ impl Field {
                     panic!("aaa");
                 }
                 crate::schema_capnp::type_::Which::Interface(_) => {
-                    introspect::TypeVariant::Capability
+                    //TypeVariant::Capability(RawCapabilitySchema { encoded_node: leak }),
+                    panic!("aaa");
                 }
                 crate::schema_capnp::type_::Which::AnyPointer(_) => {
                     introspect::TypeVariant::AnyPointer
@@ -775,5 +787,37 @@ impl ::core::iter::IntoIterator for AnnotationList {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+/// A capability schema
+#[derive(Clone, Copy)]
+pub struct CapabilitySchema {
+    pub(crate) raw: RawCapabilitySchema,
+    pub(crate) proto: node::Reader<'static>,
+}
+
+impl CapabilitySchema {
+    pub fn new(raw: RawCapabilitySchema) -> Self {
+        let proto = crate::any_pointer::Reader::new(unsafe {
+            layout::PointerReader::get_root_unchecked(raw.encoded_node.as_ptr() as *const u8)
+        })
+        .get_as()
+        .unwrap();
+        Self { raw, proto }
+    }
+
+    pub fn get_proto(self) -> node::Reader<'static> {
+        self.proto
+    }
+
+    pub fn get_methods(self) -> Result<()> {
+        todo!();
+    }
+}
+
+impl From<RawCapabilitySchema> for CapabilitySchema {
+    fn from(re: RawCapabilitySchema) -> CapabilitySchema {
+        CapabilitySchema::new(re)
     }
 }

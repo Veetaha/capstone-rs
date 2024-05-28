@@ -57,7 +57,9 @@ impl<'a> Reader<'a> {
                     element_type,
                 )))
             }
-            (value::Interface(()), TypeVariant::Capability) => Ok(Capability.into()),
+            (value::Interface(()), TypeVariant::Capability(c)) => {
+                Ok(Reader::Capability(Capability::new(c.into())))
+            }
             (value::AnyPointer(a), TypeVariant::AnyPointer) => Ok(a.into()),
             _ => Err(crate::Error::from_kind(crate::ErrorKind::TypeMismatch)),
         }
@@ -137,6 +139,7 @@ downcast_reader_impl!(crate::data::Reader<'a>, Data, "data");
 downcast_reader_impl!(dynamic_list::Reader<'a>, List, "list");
 downcast_reader_impl!(dynamic_struct::Reader<'a>, Struct, "struct");
 downcast_reader_impl!(crate::any_pointer::Reader<'a>, AnyPointer, "anypointer");
+downcast_reader_impl!(Capability, Capability, "capability");
 
 /// A dynamically-typed value with mutable interior.
 pub enum Builder<'a> {
@@ -258,6 +261,7 @@ downcast_builder_impl!(crate::data::Builder<'a>, Data, "data");
 downcast_builder_impl!(dynamic_list::Builder<'a>, List, "list");
 downcast_builder_impl!(dynamic_struct::Builder<'a>, Struct, "struct");
 downcast_builder_impl!(crate::any_pointer::Builder<'a>, AnyPointer, "anypointer");
+downcast_builder_impl!(Capability, Capability, "capability");
 
 /// A dynamically-typed enum value.
 #[derive(Clone, Copy)]
@@ -302,7 +306,19 @@ impl<'a> From<Enum> for Builder<'a> {
 /// A dynamic capability. Currently, this is just a stub and does not support calling
 /// of methods.
 #[derive(Clone, Copy)]
-pub struct Capability;
+pub struct Capability {
+    schema: crate::schema::CapabilitySchema,
+}
+
+impl Capability {
+    pub fn new(schema: crate::schema::CapabilitySchema) -> Self {
+        Self { schema }
+    }
+
+    pub fn get_schema(&self) -> crate::schema::CapabilitySchema {
+        self.schema
+    }
+}
 
 impl<'a> From<Capability> for Reader<'a> {
     fn from(c: Capability) -> Reader<'a> {

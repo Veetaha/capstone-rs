@@ -3307,6 +3307,10 @@ impl<'a> PointerBuilder<'a> {
         );
     }
 
+    pub unsafe fn set_capability_directly(&mut self, cap: u32) {
+        (*self.pointer).set_cap(cap);
+    }
+
     pub fn copy_from(&mut self, other: PointerReader, canonicalize: bool) -> Result<()> {
         if other.pointer.is_null() {
             if !self.pointer.is_null() {
