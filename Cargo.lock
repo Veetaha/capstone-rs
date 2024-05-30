@@ -54,12 +54,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyhow"
-version = "1.0.83"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25bdb32cbbdce2b519a9cd7df3a678443100e265d5e25ca763b7572a5104f5f3"
-
-[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -233,11 +227,11 @@ dependencies = [
 name = "capnpc-test"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "capstone",
  "capstone-gen",
  "capstone-import",
  "external-crate",
+ "eyre",
  "tempfile",
 ]
 
@@ -245,11 +239,11 @@ dependencies = [
 name = "capnpc-test-edition-2018"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "capstone",
  "capstone-gen",
  "capstone-import",
  "external-crate",
+ "eyre",
  "tempfile",
 ]
 
@@ -257,11 +251,11 @@ dependencies = [
 name = "capnpc-test-edition-2021"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "capstone",
  "capstone-gen",
  "capstone-import",
  "external-crate",
+ "eyre",
  "tempfile",
 ]
 
@@ -296,11 +290,11 @@ dependencies = [
 name = "capstone-import"
 version = "0.18.0"
 dependencies = [
- "anyhow",
  "capstone",
  "capstone-gen",
  "cmake",
  "convert_case",
+ "eyre",
  "proc-macro2",
  "quote",
  "relative-path",
@@ -521,11 +515,21 @@ dependencies = [
 name = "external-crate"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "capstone",
  "capstone-gen",
  "capstone-import",
+ "eyre",
  "tempfile",
+]
+
+[[package]]
+name = "eyre"
+version = "0.6.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
+dependencies = [
+ "indenter",
+ "once_cell",
 ]
 
 [[package]]
@@ -816,6 +820,12 @@ name = "indent_write"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cfe9645a18782869361d9c8732246be7b410ad4e919d3609ebabdac00ba12c3"
+
+[[package]]
+name = "indenter"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
 
 [[package]]
 name = "indexmap"

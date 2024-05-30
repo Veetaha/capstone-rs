@@ -244,6 +244,11 @@ impl DynamicSchema {
         }
         Ok(this)
     }
+
+    pub fn get_type_by_id(&self, id: u64) -> Option<&TypeVariant> {
+        self.nodes.get(&id)
+    }
+
     pub fn get_type_by_scope(&self, scope: Vec<String>) -> Option<&TypeVariant> {
         let mut parent = self.root;
         let mut result = None;
@@ -793,7 +798,7 @@ impl ::core::iter::IntoIterator for AnnotationList {
 /// A capability schema
 #[derive(Clone, Copy)]
 pub struct CapabilitySchema {
-    pub(crate) raw: RawCapabilitySchema,
+    pub(crate) _raw: RawCapabilitySchema,
     pub(crate) proto: node::Reader<'static>,
 }
 
@@ -804,7 +809,7 @@ impl CapabilitySchema {
         })
         .get_as()
         .unwrap();
-        Self { raw, proto }
+        Self { _raw: raw, proto }
     }
 
     pub fn get_proto(self) -> node::Reader<'static> {

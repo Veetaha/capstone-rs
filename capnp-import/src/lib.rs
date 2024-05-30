@@ -1,7 +1,7 @@
 //! Download and/or build official Cap-n-Proto compiler (capnp) release for the current OS and architecture
 
-use anyhow::anyhow;
 use convert_case::{Case, Casing};
+use eyre::{eyre, Result};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
@@ -13,7 +13,7 @@ use syn::{LitStr, Token};
 use walkdir::WalkDir;
 use wax::{BuildError, Walk};
 
-use anyhow::Context;
+use eyre::Context;
 
 include!(concat!(env!("OUT_DIR"), "/extract_bin.rs"));
 
@@ -36,7 +36,7 @@ pub fn capnp_extract_bin(_: TokenStream) -> TokenStream {
     TokenStream2::from_str(&content).unwrap().into()
 }
 
-fn process_inner<I>(path_patterns: I) -> anyhow::Result<TokenStream2>
+fn process_inner<I>(path_patterns: I) -> eyre::Result<TokenStream2>
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
@@ -70,9 +70,9 @@ where
         if file_path.is_file()
             && file_path
                 .file_name()
-                .ok_or(anyhow!("Couldn't parse file: {:?}", file_path))?
+                .ok_or(eyre!("Couldn't parse file: {:?}", file_path))?
                 .to_str()
-                .ok_or(anyhow!("Couldn't convert to &str: {:?}", file_path))?
+                .ok_or(eyre!("Couldn't convert to &str: {:?}", file_path))?
                 .ends_with("_capnp.rs")
         {
             helperfile.extend(append_path(&file_path)?);
@@ -82,16 +82,16 @@ where
     // When TempDir goes out of scope, it gets deleted
 }
 
-fn append_path(file_path: &Path) -> anyhow::Result<TokenStream2> {
+fn append_path(file_path: &Path) -> eyre::Result<TokenStream2> {
     let file_stem = file_path
         .file_stem()
-        .ok_or(anyhow!("Couldn't parse file: {:?}", file_path))?
+        .ok_or(eyre!("Couldn't parse file: {:?}", file_path))?
         .to_str()
-        .ok_or(anyhow!("Couldn't convert to &str: {:?}", file_path))?
+        .ok_or(eyre!("Couldn't convert to &str: {:?}", file_path))?
         .to_case(Case::Snake);
 
     let contents = TokenStream2::from_str(&fs::read_to_string(file_path)?).map_err(|_| {
-        anyhow!(
+        eyre!(
             "Couldn't convert file contents to TokenStream: {:?}",
             file_path
         )
@@ -110,7 +110,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic_file_test() -> anyhow::Result<()> {
+    fn basic_file_test() -> eyre::Result<()> {
         let contents = process_inner(["tests/example.capnp"])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn glob_test() -> anyhow::Result<()> {
+    fn glob_test() -> eyre::Result<()> {
         let contents = process_inner(["tests/folder-test/*.capnp"])?;
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");

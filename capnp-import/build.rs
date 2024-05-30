@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use eyre::{eyre, Context, Result};
 use relative_path::RelativePathBuf;
 use std::{
     env,
@@ -9,7 +9,7 @@ use std::{
 };
 
 #[cfg(feature = "deny-net-fetch")]
-use anyhow::bail;
+use eyre::bail;
 
 // update this whenever you change the subtree pointer
 const CAPNP_VERSION: &str = "2.0-fs";
@@ -28,7 +28,7 @@ impl Display for CapstoneAcquired {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     // we're making the assumption that the executable is always accessible.
     // if we can't make this assumption, we can just include_bytes!() it and then unpack it at runtime.
 
@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
 
     // only build if it can't be detected in the $PATH
     // check if there is a capnp binary in the path that meets the version requirement
-    let existing_capnp: anyhow::Result<PathBuf> = (|| {
+    let existing_capnp: Result<PathBuf> = (|| {
         let bin = which::which("capnp").context("could not find a system capnp binary")?;
         let version = get_version(&bin).context(
             "could not obtain version of found binary, system capnp may be inaccessible",
@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
             Ok(bin)
         } else {
             println!("cargo:warning=System version of capnp found ({}) does not meet version requirement {CAPNP_VERSION}.", &version);
-            Err(anyhow!(
+            Err(eyre!(
                 "version of system capnp does not meet version requirements"
             ))?
         }
@@ -81,7 +81,7 @@ fn main() -> anyhow::Result<()> {
         format!(
             "
 #[allow(dead_code)]
-fn commandhandle() -> anyhow::Result<tempfile::TempDir> {{
+fn commandhandle() -> eyre::Result<tempfile::TempDir> {{
     use std::io::Write;
     #[cfg(any(target_os = \"linux\", target_os = \"macos\"))]
     use std::os::unix::fs::OpenOptionsExt;
@@ -116,13 +116,13 @@ fn commandhandle() -> anyhow::Result<tempfile::TempDir> {{
     Ok(())
 }
 
-fn get_version(executable: &Path) -> anyhow::Result<String> {
+fn get_version(executable: &Path) -> Result<String> {
     let version = String::from_utf8(Command::new(executable).arg("--version").output()?.stdout)?;
     Ok(version)
 }
 
 // build capstone with cmake, configured for windows and linux envs
-fn build_with_cmake(out_dir: &PathBuf) -> anyhow::Result<CapstoneAcquired> {
+fn build_with_cmake(out_dir: &PathBuf) -> Result<CapstoneAcquired> {
     // is dst consistent? might need to write this down somewhere if it isn't
     let mut dst = cmake::Config::new("capstone");
 
