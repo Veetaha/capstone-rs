@@ -100,7 +100,7 @@ fn commandhandle() -> eyre::Result<tempfile::TempDir> {{
         .open(tempdir.path().join(\"capnp\"))?;
 
     #[cfg(target_os = \"windows\")]
-    let mut handle = std::fs::OpenOptions::new().write(true).create(true).open(tempdir.path().join(\"capnp\"))?;
+    let mut handle = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(tempdir.path().join(\"capnp\"))?;
 
     #[cfg(not(any(target_os = \"linux\", target_os = \"macos\", target_os = \"windows\")))]
     compile_error!(\"capnp-import does not support your operating system!\");
