@@ -48,7 +48,6 @@ where
     cmd.output_path(&output_dir);
 
     let searchpaths: Vec<PathBuf> = std::env::vars()
-        .into_iter()
         .filter_map(|(key, value)| {
             if key.starts_with("DEP_") && key.ends_with("_SCHEMA_DIR") {
                 cmd.import_path(&value);
@@ -65,7 +64,7 @@ where
     let globs = path_patterns
         .into_iter()
         .flat_map(|s| {
-            let is_absolute = s.as_ref().starts_with("/");
+            let is_absolute = s.as_ref().starts_with('/');
             let closure = move |dir| {
                 wax::walk(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()), dir)
                     .map_err(BuildError::into_owned)
@@ -160,7 +159,7 @@ mod tests {
 
     #[should_panic]
     #[test]
-    fn search_failure_test() -> () {
+    fn search_failure_test() {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .unwrap()
             .join("tests");
