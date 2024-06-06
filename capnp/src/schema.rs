@@ -486,17 +486,17 @@ impl Field {
                 crate::schema_capnp::type_::Which::Text(_) => introspect::TypeVariant::Text,
                 crate::schema_capnp::type_::Which::Data(_) => introspect::TypeVariant::Data,
                 crate::schema_capnp::type_::Which::List(_) => {
-                    panic!("aaa");
+                    todo!();
                 }
-                crate::schema_capnp::type_::Which::Enum(_) => {
-                    panic!("aaa");
-                }
+                crate::schema_capnp::type_::Which::Enum(_) => TypeVariant::Enum(RawEnumSchema {
+                    encoded_node: &[],
+                    annotation_types: dynamic_annotation_marker,
+                }),
                 crate::schema_capnp::type_::Which::Struct(_) => {
-                    panic!("aaa");
+                    todo!();
                 }
                 crate::schema_capnp::type_::Which::Interface(_) => {
-                    //TypeVariant::Capability(RawCapabilitySchema { encoded_node: leak }),
-                    panic!("aaa");
+                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
                 }
                 crate::schema_capnp::type_::Which::AnyPointer(_) => {
                     introspect::TypeVariant::AnyPointer
@@ -779,7 +779,8 @@ impl AnnotationList {
         let ty = if self.get_annotation_type != dynamic_annotation_marker {
             (self.get_annotation_type)(self.child_index, index)
         } else {
-            panic!("aaa");
+            // We do not support dynamic annotations yet
+            todo!();
         };
 
         Annotation { proto, ty }
