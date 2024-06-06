@@ -95,7 +95,6 @@ impl DynamicSchema {
     fn process_node(
         nodes: &mut HashMap<u64, TypeVariant>,
         id: u64,
-        root: &mut u64,
         scopes: &mut HashMap<(u64, String), u64>,
         node_map: &HashMap<u64, crate::schema_capnp::node::Reader>,
     ) -> Result<()> {
@@ -107,7 +106,7 @@ impl DynamicSchema {
 
         match node.which()? {
             node::File(()) => {
-                *root = node.get_id();
+                // do nothing
             }
             node::Struct(st) => {
                 let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
@@ -233,14 +232,31 @@ impl DynamicSchema {
             }
         }
 
+        // Fix up imported files
+        for requested_file in request.get_requested_files()? {
+            let id = requested_file.get_id();
+
+            for import in requested_file.get_imports()? {
+                let import_id = import.get_id();
+                if this.node_parents.get(&import_id) == Some(&0) {
+                    this.node_parents.insert(import_id, id);
+                }
+                this.scopes
+                    .insert((id, import.get_name()?.to_string()?), import_id);
+            }
+        }
+
         for node in request.get_nodes()? {
-            Self::process_node(
-                &mut this.nodes,
-                node.get_id(),
-                &mut this.root,
-                &mut this.scopes,
-                &node_map,
-            )?;
+            if this.node_parents[&node.get_id()] == 0 {
+                if this.root != 0 {
+                    return Err(crate::Error::from_kind(
+                        crate::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
+                    ));
+                }
+                this.root = node.get_id();
+            }
+
+            Self::process_node(&mut this.nodes, node.get_id(), &mut this.scopes, &node_map)?;
         }
         Ok(this)
     }

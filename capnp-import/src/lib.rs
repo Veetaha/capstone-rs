@@ -61,27 +61,26 @@ where
     let manifest: [PathBuf; 1] =
         [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap()];
 
-    let globs = path_patterns
-        .into_iter()
-        .flat_map(|s| {
-            let is_absolute = s.as_ref().starts_with('/');
-            let closure = move |dir| {
-                wax::walk(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()), dir)
-                    .map_err(BuildError::into_owned)
-                    .map(Walk::into_owned)
-            };
-            if is_absolute {
-                searchpaths.iter().flat_map(closure)
-            } else {
-                manifest.iter().flat_map(closure)
-            }
-        })
-        .flatten();
+    let globs = path_patterns.into_iter().flat_map(|s| {
+        let is_absolute = s.as_ref().starts_with('/');
+        let closure = move |dir| -> Result<Walk<'static>, BuildError<'static>> {
+            wax::walk(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()), dir)
+                .map_err(BuildError::into_owned)
+                .map(Walk::into_owned)
+        };
+        if is_absolute {
+            searchpaths.iter().map(closure)
+        } else {
+            manifest.iter().map(closure)
+        }
+    });
 
     for entry_result in globs {
-        let entry: PathBuf = entry_result?.into_path();
-        if entry.is_file() {
-            cmd.file(entry);
+        for entry in (entry_result?).flatten() {
+            let path: PathBuf = entry.into_path();
+            if path.is_file() {
+                cmd.file(path);
+            }
         }
     }
 
@@ -145,6 +144,12 @@ mod tests {
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
+    }
+
+    #[should_panic]
+    #[test]
+    fn compile_fail_test() {
+        let _ = process_inner(["*********//*.capnp*"]).unwrap();
     }
 
     #[test]
