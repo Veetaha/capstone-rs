@@ -2968,7 +2968,11 @@ impl<'a> PointerReader<'a> {
         }
     }
 
-    pub fn get_list_any_size(self, default_value: *const u8) -> Result<ListReader<'a>> {
+    pub fn get_list_any_size(self, default: Option<&'a [crate::Word]>) -> Result<ListReader<'a>> {
+        let default_value: *const u8 = match default {
+            None => core::ptr::null(),
+            Some(d) => d.as_ptr() as *const u8,
+        };
         let reff = if self.pointer.is_null() {
             zero_pointer()
         } else {
@@ -3065,7 +3069,7 @@ impl<'a> PointerReader<'a> {
                 }
             }
             PointerType::List => unsafe {
-                self.get_list_any_size(ptr::null())?
+                self.get_list_any_size(None)?
                     .is_canonical(read_head, self.pointer)
             },
             PointerType::Capability(_) => Ok(false),

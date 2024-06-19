@@ -362,29 +362,35 @@ impl Client {
     }
 }
 
+#[cfg(feature = "alloc")]
 // This is an untyped dispatch for an untyped server, which forwards calls directly to dispatch_call
 pub struct UntypedDispatch<_T> {
     pub server: _T,
 }
 
+#[cfg(feature = "alloc")]
 impl<_T: Server> ::core::ops::Deref for UntypedDispatch<_T> {
     type Target = _T;
     fn deref(&self) -> &_T {
         &self.server
     }
 }
+
+#[cfg(feature = "alloc")]
 impl<_T: Server> ::core::ops::DerefMut for UntypedDispatch<_T> {
     fn deref_mut(&mut self) -> &mut _T {
         &mut self.server
     }
 }
+
+#[cfg(feature = "alloc")]
 impl<_T: Server> crate::capability::Server for UntypedDispatch<_T> {
     async fn dispatch_call(
         &self,
         interface_id: u64,
         method_id: u16,
-        params: crate::capability::Params<crate::any_pointer::Owned>,
-        results: crate::capability::Results<crate::any_pointer::Owned>,
+        params: crate::capability::Params<any_pointer::Owned>,
+        results: crate::capability::Results<any_pointer::Owned>,
     ) -> Result<(), crate::Error> {
         self.server
             .dispatch_call(interface_id, method_id, params, results)
@@ -392,6 +398,7 @@ impl<_T: Server> crate::capability::Server for UntypedDispatch<_T> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl crate::introspect::Introspect for Client {
     fn introspect() -> crate::introspect::Type {
         crate::introspect::TypeVariant::Capability(crate::introspect::RawCapabilitySchema {
@@ -401,6 +408,7 @@ impl crate::introspect::Introspect for Client {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<_S: Server + 'static> crate::capability::FromServer<_S> for Client {
     type Dispatch = UntypedDispatch<_S>;
     fn from_server(s: _S) -> UntypedDispatch<_S> {
@@ -408,14 +416,15 @@ impl<_S: Server + 'static> crate::capability::FromServer<_S> for Client {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl crate::capability::FromClientHook for Client {
-    fn new(hook: Box<dyn (crate::private::capability::ClientHook)>) -> Self {
-        Self { hook: hook }
+    fn new(hook: Box<dyn (ClientHook)>) -> Self {
+        Self { hook }
     }
-    fn into_client_hook(self) -> Box<dyn (crate::private::capability::ClientHook)> {
+    fn into_client_hook(self) -> Box<dyn (ClientHook)> {
         self.hook
     }
-    fn as_client_hook(&self) -> &dyn (crate::private::capability::ClientHook) {
+    fn as_client_hook(&self) -> &dyn (ClientHook) {
         &*self.hook
     }
 }

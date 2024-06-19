@@ -103,7 +103,7 @@ mod broken;
 mod local;
 pub mod queued;
 mod reconnect;
-mod rpc;
+pub mod rpc;
 mod sender_queue;
 mod split;
 mod task_set;

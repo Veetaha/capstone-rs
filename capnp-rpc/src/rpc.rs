@@ -3141,12 +3141,12 @@ where
 
 // ===================================
 
-struct SingleCapPipeline {
+pub struct SingleCapPipeline {
     cap: Box<dyn ClientHook>,
 }
 
 impl SingleCapPipeline {
-    fn new(cap: Box<dyn ClientHook>) -> Self {
+    pub fn new(cap: Box<dyn ClientHook>) -> Self {
         Self { cap }
     }
 }
