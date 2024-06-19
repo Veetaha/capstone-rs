@@ -114,7 +114,7 @@ pub enum PointerType {
     Null,
     Struct,
     List,
-    Capability,
+    Capability(u32),
 }
 
 impl WirePointerKind {
@@ -2875,6 +2875,10 @@ impl<'a> PointerReader<'a> {
         })
     }
 
+    pub fn get_cap_table(&self) -> &CapTableReader {
+        &self.cap_table
+    }
+
     pub fn reborrow(&self) -> PointerReader<'_> {
         PointerReader {
             arena: self.arena,
@@ -2964,7 +2968,7 @@ impl<'a> PointerReader<'a> {
         }
     }
 
-    fn get_list_any_size(self, default_value: *const u8) -> Result<ListReader<'a>> {
+    pub fn get_list_any_size(self, default_value: *const u8) -> Result<ListReader<'a>> {
         let reff = if self.pointer.is_null() {
             zero_pointer()
         } else {
@@ -3032,7 +3036,7 @@ impl<'a> PointerReader<'a> {
                 WirePointerKind::List => Ok(PointerType::List),
                 WirePointerKind::Other => {
                     if unsafe { (*reff).is_capability() } {
-                        Ok(PointerType::Capability)
+                        unsafe { Ok(PointerType::Capability((*reff).cap_index())) }
                     } else {
                         Err(Error::from_kind(ErrorKind::UnknownPointerType))
                     }
@@ -3064,7 +3068,7 @@ impl<'a> PointerReader<'a> {
                 self.get_list_any_size(ptr::null())?
                     .is_canonical(read_head, self.pointer)
             },
-            PointerType::Capability => Ok(false),
+            PointerType::Capability(_) => Ok(false),
         }
     }
 }
@@ -3519,6 +3523,13 @@ impl<'a> StructReader<'a> {
         Ok(result)
     }
 
+    pub fn struct_size(&self) -> StructSize {
+        StructSize {
+            data: (self.data_size / BITS_PER_WORD as u32) as u16,
+            pointers: self.pointer_count,
+        }
+    }
+
     fn get_location(&self) -> *const u8 {
         self.data
     }
@@ -3787,6 +3798,44 @@ impl<'a> StructBuilder<'a> {
 
         Ok(())
     }
+
+    pub fn copy_data_from(&mut self, other: &StructReader) -> Result<()> {
+        use core::cmp::min;
+        // Determine the amount of data the builders have in common.
+        let shared_data_size = min(self.data_size, other.data_size);
+
+        unsafe {
+            if self.data_size > shared_data_size {
+                // Since the target is larger than the source, make sure to zero out the extra bits that the
+                // source doesn't have.
+                if self.data_size == 1 {
+                    self.set_bool_field(0, false);
+                } else {
+                    let unshared = self
+                        .data
+                        .offset((shared_data_size / BITS_PER_BYTE as u32) as isize);
+                    ptr::write_bytes(
+                        unshared,
+                        0,
+                        ((self.data_size - shared_data_size) / BITS_PER_BYTE as u32) as usize,
+                    );
+                }
+            }
+
+            // Copy over the shared part.
+            if shared_data_size == 1 {
+                self.set_bool_field(0, other.get_bool_field(0));
+            } else {
+                ptr::copy_nonoverlapping(
+                    other.data,
+                    self.data,
+                    (shared_data_size / BITS_PER_BYTE as u32) as usize,
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -3836,7 +3885,14 @@ impl<'a> ListReader<'a> {
         self.step
     }
 
-    pub(crate) fn get_element_size(&self) -> ElementSize {
+    pub fn get_element_struct_size(&self) -> StructSize {
+        StructSize {
+            data: (self.struct_data_size / BITS_PER_WORD as u32) as u16,
+            pointers: self.struct_pointer_count,
+        }
+    }
+
+    pub fn get_element_size(&self) -> ElementSize {
         self.element_size
     }
 
