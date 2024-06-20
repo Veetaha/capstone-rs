@@ -186,6 +186,7 @@ impl Clone for Error {
     fn clone(&self) -> Self {
         Self {
             kind: self.kind,
+            #[cfg(feature = "alloc")]
             #[cfg(not(feature = "backtrace"))]
             extra: self.extra.clone(),
             #[cfg(feature = "backtrace")]
