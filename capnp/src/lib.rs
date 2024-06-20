@@ -167,7 +167,7 @@ impl ::std::error::Error for NotInSchema {
 pub type Result<T> = ::core::result::Result<T, Error>;
 
 /// Describes an arbitrary error that prevented an operation from completing.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Error {
     /// The general kind of the error. Code that decides how to respond to an error
     /// should read only this field in making its decision.
@@ -176,8 +176,29 @@ pub struct Error {
     /// Extra context about error
     #[cfg(feature = "alloc")]
     pub extra: String,
+
+    /// Backtrace from the error creation
+    #[cfg(feature = "backtrace")]
+    pub backtrace: std::backtrace::Backtrace,
 }
 
+impl Clone for Error {
+    fn clone(&self) -> Self {
+        Self {
+            kind: self.kind,
+            #[cfg(not(feature = "backtrace"))]
+            extra: self.extra.clone(),
+            #[cfg(feature = "backtrace")]
+            extra: if self.backtrace.status() == std::backtrace::BacktraceStatus::Captured {
+                self.backtrace.to_string()
+            } else {
+                self.extra.clone()
+            },
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::disabled(),
+        }
+    }
+}
 /// The general nature of an error. The purpose of this enum is not to describe the error itself,
 /// but rather to describe how the client might want to respond to the error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -415,6 +436,8 @@ impl Error {
         Self {
             extra: description,
             kind: ErrorKind::Failed,
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
         }
     }
 
@@ -425,7 +448,19 @@ impl Error {
         return Self {
             kind,
             extra: String::new(),
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
         };
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn from_kind_context(kind: ErrorKind, context: String) -> Self {
+        Self {
+            kind,
+            extra: context,
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
+        }
     }
 
     #[cfg(feature = "alloc")]
@@ -433,6 +468,8 @@ impl Error {
         Self {
             extra: description,
             kind: ErrorKind::Overloaded,
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
         }
     }
     #[cfg(feature = "alloc")]
@@ -440,6 +477,8 @@ impl Error {
         Self {
             extra: description,
             kind: ErrorKind::Disconnected,
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
         }
     }
 
@@ -448,6 +487,8 @@ impl Error {
         Self {
             extra: description,
             kind: ErrorKind::Unimplemented,
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
         }
     }
 }
@@ -469,6 +510,8 @@ impl core::convert::From<::std::io::Error> for Error {
         return Self {
             kind,
             extra: format!("{err}"),
+            #[cfg(feature = "backtrace")]
+            backtrace: std::backtrace::Backtrace::capture(),
         };
         #[cfg(not(feature = "alloc"))]
         return Self { kind };
@@ -598,7 +641,20 @@ impl core::fmt::Display for ErrorKind {
 
 impl core::fmt::Display for Error {
     fn fmt(&self, fmt: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
+        #[cfg(feature = "backtrace")]
+        let result = match (self.extra.is_empty(), self.backtrace.status()) {
+            (false, std::backtrace::BacktraceStatus::Captured) => {
+                write!(fmt, "{}: {} | {}", self.kind, self.extra, self.backtrace)
+            }
+            (true, std::backtrace::BacktraceStatus::Captured) => {
+                write!(fmt, "{} | {}", self.kind, self.backtrace)
+            }
+            (false, _) => write!(fmt, "{}: {}", self.kind, self.extra),
+            (true, _) => write!(fmt, "{}", self.kind),
+        };
+
         #[cfg(feature = "alloc")]
+        #[cfg(not(feature = "backtrace"))]
         let result = if self.extra.is_empty() {
             write!(fmt, "{}", self.kind)
         } else {

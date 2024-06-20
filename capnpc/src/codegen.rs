@@ -2339,13 +2339,13 @@ fn generate_node(
                     Branch(vec![
                         Line(format!("pub struct Pipeline{bracketed_params} {{")),
                         indent(vec![
-                            Line(fmt!(ctx,"pub _typeless: {capnp}::any_pointer::Pipeline,")),
+                            Line(fmt!(ctx,"_typeless: {capnp}::any_pointer::Pipeline,")),
                             Line(params.phantom_data_type),
                         ]),
                         line("}")
                     ])
                 } else {
-                    Line(fmt!(ctx,"pub struct Pipeline {{ pub _typeless: {capnp}::any_pointer::Pipeline }}"))
+                    Line(fmt!(ctx,"pub struct Pipeline {{ _typeless: {capnp}::any_pointer::Pipeline }}"))
                 }),
                 Line(fmt!(ctx,"impl{bracketed_params} {capnp}::capability::FromTypelessPipeline for Pipeline{bracketed_params} {{")),
                 indent(vec![

@@ -27,6 +27,7 @@ quickcheck = "1"
 
 [features]
 alloc = ["embedded-io?/alloc"]
+backtrace = ["alloc"]
 default = ["std", "alloc"]
 
 rpc_try = []
