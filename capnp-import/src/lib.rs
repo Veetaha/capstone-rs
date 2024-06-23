@@ -58,8 +58,7 @@ where
         })
         .collect();
 
-    let manifest: [PathBuf; 1] =
-        [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).unwrap()];
+    let manifest: [PathBuf; 1] = [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?];
 
     let globs = path_patterns.into_iter().flat_map(|s| {
         let is_absolute = s.as_ref().starts_with('/');
