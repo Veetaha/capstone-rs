@@ -101,9 +101,9 @@ macro_rules! pry {
 mod attach;
 mod broken;
 mod local;
-mod queued;
+pub mod queued;
 mod reconnect;
-mod rpc;
+pub mod rpc;
 mod sender_queue;
 mod split;
 mod task_set;

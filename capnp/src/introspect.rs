@@ -63,7 +63,7 @@ impl Type {
                 BaseType::Enum(re) => TypeVariant::Enum(re),
                 BaseType::Struct(rs) => TypeVariant::Struct(rs),
                 BaseType::AnyPointer => TypeVariant::AnyPointer,
-                BaseType::Capability => TypeVariant::Capability,
+                BaseType::Capability(rc) => TypeVariant::Capability(rc),
             }
         }
     }
@@ -81,9 +81,10 @@ impl Type {
                 BaseType::Int16 | BaseType::UInt16 | BaseType::Enum(_) => ElementSize::TwoBytes,
                 BaseType::Int32 | BaseType::UInt32 | BaseType::Float32 => ElementSize::FourBytes,
                 BaseType::Int64 | BaseType::UInt64 | BaseType::Float64 => ElementSize::EightBytes,
-                BaseType::Text | BaseType::Data | BaseType::AnyPointer | BaseType::Capability => {
-                    ElementSize::Pointer
-                }
+                BaseType::Text
+                | BaseType::Data
+                | BaseType::AnyPointer
+                | BaseType::Capability(_) => ElementSize::Pointer,
                 BaseType::Struct(_) => ElementSize::InlineComposite,
             }
         }
@@ -100,7 +101,7 @@ impl Type {
                     | BaseType::Data
                     | BaseType::AnyPointer
                     | BaseType::Struct(_)
-                    | BaseType::Capability
+                    | BaseType::Capability(_)
             )
         }
     }
@@ -126,7 +127,7 @@ pub enum TypeVariant {
     Data,
     Struct(RawBrandedStructSchema),
     AnyPointer,
-    Capability,
+    Capability(RawCapabilitySchema),
     Enum(RawEnumSchema),
     List(Type),
 }
@@ -150,7 +151,7 @@ impl From<TypeVariant> for Type {
             TypeVariant::Data => Type::new_base(BaseType::Data),
             TypeVariant::Struct(rbs) => Type::new_base(BaseType::Struct(rbs)),
             TypeVariant::AnyPointer => Type::new_base(BaseType::AnyPointer),
-            TypeVariant::Capability => Type::new_base(BaseType::Capability),
+            TypeVariant::Capability(cs) => Type::new_base(BaseType::Capability(cs)),
             TypeVariant::Enum(es) => Type::new_base(BaseType::Enum(es)),
             TypeVariant::List(list) => Type::list_of(list),
         }
@@ -176,7 +177,7 @@ enum BaseType {
     Data,
     Struct(RawBrandedStructSchema),
     AnyPointer,
-    Capability,
+    Capability(RawCapabilitySchema),
     Enum(RawEnumSchema),
 }
 
@@ -278,5 +279,31 @@ impl core::cmp::Eq for RawEnumSchema {}
 impl core::fmt::Debug for RawEnumSchema {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
         write!(f, "RawEnumSchema({:?})", self.encoded_node as *const _)
+    }
+}
+
+/// To use one of this, you will usually want to convert it to a `schema::CapabilitySchema`,
+/// which can be done via `into()`.
+#[derive(Clone, Copy)]
+pub struct RawCapabilitySchema {
+    /// The Node (as defined in schema.capnp), as a single segment message.
+    pub encoded_node: &'static [crate::Word],
+}
+
+impl core::cmp::PartialEq for RawCapabilitySchema {
+    fn eq(&self, other: &Self) -> bool {
+        ::core::ptr::eq(self.encoded_node, other.encoded_node)
+    }
+}
+
+impl core::cmp::Eq for RawCapabilitySchema {}
+
+impl core::fmt::Debug for RawCapabilitySchema {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
+        write!(
+            f,
+            "RawCapabilitySchema({:?})",
+            self.encoded_node as *const _
+        )
     }
 }

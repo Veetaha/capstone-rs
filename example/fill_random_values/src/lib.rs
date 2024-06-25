@@ -170,7 +170,7 @@ impl<R: Rng> Filler<R> {
             }
 
             TypeVariant::AnyPointer => Ok(()),
-            TypeVariant::Capability => Ok(()),
+            TypeVariant::Capability(_) => Ok(()),
         }
     }
 
@@ -209,7 +209,7 @@ impl<R: Rng> Filler<R> {
                 self.fill_list(recursion_depth + 1, builder.get(index)?.downcast())
             }
             TypeVariant::AnyPointer => Ok(()),
-            TypeVariant::Capability => Ok(()),
+            TypeVariant::Capability(_) => Ok(()),
         }
     }
 

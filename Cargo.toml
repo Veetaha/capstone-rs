@@ -58,5 +58,5 @@ futures-util = "0.3"
 syn = { version = "2.0", features = ["full"] }
 proc-macro2 = "1.0"
 quote = "1.0"
-anyhow = "1.*"
+eyre = "0.6"
 tempfile = "3.*"

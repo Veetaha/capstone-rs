@@ -1,7 +1,9 @@
 //! Convenience wrappers of the datatypes defined in schema.capnp.
 
 use crate::dynamic_value;
-use crate::introspect::{self, RawBrandedStructSchema, RawEnumSchema, TypeVariant};
+use crate::introspect::{
+    self, RawBrandedStructSchema, RawCapabilitySchema, RawEnumSchema, TypeVariant,
+};
 use crate::private::layout;
 use crate::schema_capnp::{annotation, enumerant, field, node};
 use crate::struct_list;
@@ -93,7 +95,6 @@ impl DynamicSchema {
     fn process_node(
         nodes: &mut HashMap<u64, TypeVariant>,
         id: u64,
-        root: &mut u64,
         scopes: &mut HashMap<(u64, String), u64>,
         node_map: &HashMap<u64, crate::schema_capnp::node::Reader>,
     ) -> Result<()> {
@@ -105,7 +106,7 @@ impl DynamicSchema {
 
         match node.which()? {
             node::File(()) => {
-                *root = node.get_id();
+                // do nothing
             }
             node::Struct(st) => {
                 let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
@@ -187,7 +188,11 @@ impl DynamicSchema {
                 );
             }
             node::Interface(_) => {
-                nodes.insert(id, TypeVariant::Capability);
+                let leak = Self::leak_chunk(*node, node.total_size()?)?;
+                nodes.insert(
+                    id,
+                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: leak }),
+                );
             }
         }
 
@@ -227,17 +232,39 @@ impl DynamicSchema {
             }
         }
 
+        // Fix up imported files
+        for requested_file in request.get_requested_files()? {
+            let id = requested_file.get_id();
+
+            for import in requested_file.get_imports()? {
+                let import_id = import.get_id();
+                if this.node_parents.get(&import_id) == Some(&0) {
+                    this.node_parents.insert(import_id, id);
+                }
+                this.scopes
+                    .insert((id, import.get_name()?.to_string()?), import_id);
+            }
+        }
+
         for node in request.get_nodes()? {
-            Self::process_node(
-                &mut this.nodes,
-                node.get_id(),
-                &mut this.root,
-                &mut this.scopes,
-                &node_map,
-            )?;
+            if this.node_parents[&node.get_id()] == 0 {
+                if this.root != 0 {
+                    return Err(crate::Error::from_kind(
+                        crate::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
+                    ));
+                }
+                this.root = node.get_id();
+            }
+
+            Self::process_node(&mut this.nodes, node.get_id(), &mut this.scopes, &node_map)?;
         }
         Ok(this)
     }
+
+    pub fn get_type_by_id(&self, id: u64) -> Option<&TypeVariant> {
+        self.nodes.get(&id)
+    }
+
     pub fn get_type_by_scope(&self, scope: Vec<String>) -> Option<&TypeVariant> {
         let mut parent = self.root;
         let mut result = None;
@@ -293,6 +320,11 @@ impl std::ops::Drop for DynamicSchema {
                 TypeVariant::Enum(e) => {
                     let _ = unsafe {
                         Box::from_raw(e.encoded_node as *const [crate::Word] as *mut [crate::Word])
+                    };
+                }
+                TypeVariant::Capability(c) => {
+                    let _ = unsafe {
+                        Box::from_raw(c.encoded_node as *const [crate::Word] as *mut [crate::Word])
                     };
                 }
                 TypeVariant::List(_) => todo!(),
@@ -454,16 +486,17 @@ impl Field {
                 crate::schema_capnp::type_::Which::Text(_) => introspect::TypeVariant::Text,
                 crate::schema_capnp::type_::Which::Data(_) => introspect::TypeVariant::Data,
                 crate::schema_capnp::type_::Which::List(_) => {
-                    panic!("aaa");
+                    todo!();
                 }
-                crate::schema_capnp::type_::Which::Enum(_) => {
-                    panic!("aaa");
-                }
+                crate::schema_capnp::type_::Which::Enum(_) => TypeVariant::Enum(RawEnumSchema {
+                    encoded_node: &[],
+                    annotation_types: dynamic_annotation_marker,
+                }),
                 crate::schema_capnp::type_::Which::Struct(_) => {
-                    panic!("aaa");
+                    todo!();
                 }
                 crate::schema_capnp::type_::Which::Interface(_) => {
-                    introspect::TypeVariant::Capability
+                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
                 }
                 crate::schema_capnp::type_::Which::AnyPointer(_) => {
                     introspect::TypeVariant::AnyPointer
@@ -746,7 +779,8 @@ impl AnnotationList {
         let ty = if self.get_annotation_type != dynamic_annotation_marker {
             (self.get_annotation_type)(self.child_index, index)
         } else {
-            panic!("aaa");
+            // We do not support dynamic annotations yet
+            todo!();
         };
 
         Annotation { proto, ty }
@@ -775,5 +809,37 @@ impl ::core::iter::IntoIterator for AnnotationList {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+/// A capability schema
+#[derive(Clone, Copy)]
+pub struct CapabilitySchema {
+    pub(crate) _raw: RawCapabilitySchema,
+    pub(crate) proto: node::Reader<'static>,
+}
+
+impl CapabilitySchema {
+    pub fn new(raw: RawCapabilitySchema) -> Self {
+        let proto = crate::any_pointer::Reader::new(unsafe {
+            layout::PointerReader::get_root_unchecked(raw.encoded_node.as_ptr() as *const u8)
+        })
+        .get_as()
+        .unwrap();
+        Self { _raw: raw, proto }
+    }
+
+    pub fn get_proto(self) -> node::Reader<'static> {
+        self.proto
+    }
+
+    pub fn get_methods(self) -> Result<()> {
+        todo!();
+    }
+}
+
+impl From<RawCapabilitySchema> for CapabilitySchema {
+    fn from(re: RawCapabilitySchema) -> CapabilitySchema {
+        CapabilitySchema::new(re)
     }
 }

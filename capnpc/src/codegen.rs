@@ -2497,6 +2497,13 @@ fn generate_node(
                 format_u64(node_id)
             )));
 
+            private_mod_interior.push(crate::pointer_constants::node_word_array_declaration(
+                ctx,
+                "ENCODED_NODE",
+                *node_reader,
+                crate::pointer_constants::WordArrayDeclarationOptions { public: true },
+            )?);
+
             mod_interior.push(line("#![allow(unused_variables)]"));
             let methods = interface.get_methods()?;
             for (ordinal, method) in methods.into_iter().enumerate() {
@@ -2661,13 +2668,15 @@ fn generate_node(
                     indent(Line(fmt!(ctx,"fn as_client_hook(&self) -> &dyn ({capnp}::private::capability::ClientHook) {{"))),
                     indent(indent(line("&*self.client.hook"))),
                     indent(line("}")),
-                    line("}")]));
+                    line("}"),
+                    Line(fmt!(ctx,"impl {bracketed_params} {capnp}::introspect::Introspect for Client{bracketed_params} {{ fn introspect() -> {capnp}::introspect::Type {{ {capnp}::introspect::TypeVariant::Capability({capnp}::introspect::RawCapabilitySchema {{ encoded_node: &_private::ENCODED_NODE }}).into() }} }}")),
+                    ]));
 
             mod_interior.push(if !is_generic {
                 Branch(vec![
                     Line("#[derive(Copy, Clone)]".into()),
                     line("pub struct Owned(());"),
-                    Line(fmt!(ctx,"impl {capnp}::introspect::Introspect for Owned {{ fn introspect() -> {capnp}::introspect::Type {{ {capnp}::introspect::TypeVariant::Capability.into() }} }}")),
+                    Line(fmt!(ctx,"impl {capnp}::introspect::Introspect for Owned {{ fn introspect() -> {capnp}::introspect::Type {{ {capnp}::introspect::TypeVariant::Capability({capnp}::introspect::RawCapabilitySchema {{ encoded_node: &_private::ENCODED_NODE }}).into() }} }}")),
                     line("impl ::capnp::traits::Owned for Owned { type Reader<'a> = Client; type Builder<'a> = Client; }"),
                     Line(fmt!(ctx,"impl {capnp}::traits::Pipelined for Owned {{ type Pipeline = Client; }}"))])
             } else {
@@ -2677,7 +2686,7 @@ fn generate_node(
                     indent(Line(params.phantom_data_type.clone())),
                     line("}"),
                     Line(fmt!(ctx,
-                              "impl <{0}> {capnp}::introspect::Introspect for Owned <{0}> {1} {{ fn introspect() -> {capnp}::introspect::Type {{ {capnp}::introspect::TypeVariant::Capability.into() }} }}",
+                              "impl <{0}> {capnp}::introspect::Introspect for Owned <{0}> {1} {{ fn introspect() -> {capnp}::introspect::Type {{ {capnp}::introspect::TypeVariant::Capability({capnp}::introspect::RawCapabilitySchema {{ encoded_node: &_private::ENCODED_NODE }}).into() }} }}",
                               params.params, params.where_clause)),
                     Line(fmt!(ctx,
                         "impl <{0}> {capnp}::traits::Owned for Owned <{0}> {1} {{ type Reader<'a> = Client<{0}>; type Builder<'a> = Client<{0}>; }}",

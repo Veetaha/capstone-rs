@@ -12,4 +12,4 @@ capstone.workspace = true
 capstone-import.workspace = true
 capstone-gen.workspace = true
 tempfile.workspace = true
-anyhow.workspace = true
+eyre.workspace = true

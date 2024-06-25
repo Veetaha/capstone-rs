@@ -1,7 +1,7 @@
 //! Download and/or build official Cap-n-Proto compiler (capnp) release for the current OS and architecture
 
-use anyhow::anyhow;
 use convert_case::{Case, Casing};
+use eyre::{eyre, Result};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
@@ -13,7 +13,7 @@ use syn::{LitStr, Token};
 use walkdir::WalkDir;
 use wax::{BuildError, Walk};
 
-use anyhow::Context;
+use eyre::Context;
 
 include!(concat!(env!("OUT_DIR"), "/extract_bin.rs"));
 
@@ -22,7 +22,6 @@ include!(concat!(env!("OUT_DIR"), "/extract_bin.rs"));
 /// Resulting rust files from that compilation are then deleted.
 #[proc_macro]
 pub fn capnp_import(input: TokenStream) -> TokenStream {
-    //println!("DIR: {:?}", std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let parser = syn::punctuated::Punctuated::<LitStr, Token![,]>::parse_separated_nonempty;
     let path_patterns = parser.parse(input).unwrap();
     let path_patterns = path_patterns.into_iter().map(|item| item.value());
@@ -36,7 +35,7 @@ pub fn capnp_extract_bin(_: TokenStream) -> TokenStream {
     TokenStream2::from_str(&content).unwrap().into()
 }
 
-fn process_inner<I>(path_patterns: I) -> anyhow::Result<TokenStream2>
+fn process_inner<I>(path_patterns: I) -> Result<TokenStream2>
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
@@ -48,21 +47,42 @@ where
     cmd.capnp_executable(cmdpath);
     cmd.output_path(&output_dir);
 
-    let globs = path_patterns
-        .into_iter()
-        .flat_map(|s| {
-            wax::walk(s.as_ref(), std::env::var("CARGO_MANIFEST_DIR").unwrap())
+    let searchpaths: Vec<PathBuf> = std::env::vars()
+        .filter_map(|(key, value)| {
+            if key.starts_with("DEP_") && key.ends_with("_SCHEMA_DIR") {
+                cmd.import_path(&value);
+                Some(value.into())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let manifest: [PathBuf; 1] = [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?];
+
+    let globs = path_patterns.into_iter().flat_map(|s| {
+        let is_absolute = s.as_ref().starts_with('/');
+        let closure = move |dir| -> Result<Walk<'static>, BuildError<'static>> {
+            wax::walk(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()), dir)
                 .map_err(BuildError::into_owned)
                 .map(Walk::into_owned)
-        })
-        .flatten();
+        };
+        if is_absolute {
+            searchpaths.iter().map(closure)
+        } else {
+            manifest.iter().map(closure)
+        }
+    });
 
     for entry_result in globs {
-        let entry: PathBuf = entry_result?.into_path();
-        if entry.is_file() {
-            cmd.file(entry);
+        for entry in (entry_result?).flatten() {
+            let path: PathBuf = entry.into_path();
+            if path.is_file() {
+                cmd.file(path);
+            }
         }
     }
+
     cmd.run()?;
     let mut helperfile = TokenStream2::new();
     for entry_result in WalkDir::new(output_dir.path()) {
@@ -70,9 +90,9 @@ where
         if file_path.is_file()
             && file_path
                 .file_name()
-                .ok_or(anyhow!("Couldn't parse file: {:?}", file_path))?
+                .ok_or(eyre!("Couldn't parse file: {:?}", file_path))?
                 .to_str()
-                .ok_or(anyhow!("Couldn't convert to &str: {:?}", file_path))?
+                .ok_or(eyre!("Couldn't convert to &str: {:?}", file_path))?
                 .ends_with("_capnp.rs")
         {
             helperfile.extend(append_path(&file_path)?);
@@ -82,16 +102,16 @@ where
     // When TempDir goes out of scope, it gets deleted
 }
 
-fn append_path(file_path: &Path) -> anyhow::Result<TokenStream2> {
+fn append_path(file_path: &Path) -> Result<TokenStream2> {
     let file_stem = file_path
         .file_stem()
-        .ok_or(anyhow!("Couldn't parse file: {:?}", file_path))?
+        .ok_or(eyre!("Couldn't parse file: {:?}", file_path))?
         .to_str()
-        .ok_or(anyhow!("Couldn't convert to &str: {:?}", file_path))?
+        .ok_or(eyre!("Couldn't convert to &str: {:?}", file_path))?
         .to_case(Case::Snake);
 
     let contents = TokenStream2::from_str(&fs::read_to_string(file_path)?).map_err(|_| {
-        anyhow!(
+        eyre!(
             "Couldn't convert file contents to TokenStream: {:?}",
             file_path
         )
@@ -110,7 +130,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic_file_test() -> anyhow::Result<()> {
+    fn basic_file_test() -> Result<()> {
         let contents = process_inner(["tests/example.capnp"])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
@@ -118,10 +138,39 @@ mod tests {
     }
 
     #[test]
-    fn glob_test() -> anyhow::Result<()> {
+    fn glob_test() -> Result<()> {
         let contents = process_inner(["tests/folder-test/*.capnp"])?;
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
+    }
+
+    #[should_panic]
+    #[test]
+    fn compile_fail_test() {
+        let _ = process_inner(["*********//*.capnp*"]).unwrap();
+    }
+
+    #[test]
+    fn search_test() -> Result<()> {
+        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?.join("tests");
+        std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
+        let contents = process_inner(["/folder-test/*.capnp"])?;
+        let tests_module: syn::ItemMod = syn::parse2(contents)?;
+        assert_eq!(tests_module.ident, "foo_capnp");
+        Ok(())
+    }
+
+    #[should_panic]
+    #[test]
+    fn search_failure_test() {
+        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("tests");
+        std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
+        // This should fail because the path doesn't start with '/'
+        let contents = process_inner(["folder-test/*.capnp"]).unwrap();
+        let tests_module: syn::ItemMod = syn::parse2(contents).unwrap();
+        assert_eq!(tests_module.ident, "foo_capnp");
     }
 }

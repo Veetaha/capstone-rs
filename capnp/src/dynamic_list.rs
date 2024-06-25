@@ -115,9 +115,9 @@ impl<'a> Reader<'a> {
             TypeVariant::AnyPointer => {
                 Ok(crate::any_pointer::Reader::new(self.reader.get_pointer_element(index)).into())
             }
-            TypeVariant::Capability => {
-                Ok(dynamic_value::Reader::Capability(dynamic_value::Capability))
-            }
+            TypeVariant::Capability(cs) => Ok(dynamic_value::Reader::Capability(
+                dynamic_value::Capability::new(cs.into()),
+            )),
         }
     }
 
@@ -253,8 +253,8 @@ impl<'a> Builder<'a> {
                 self.builder.get_pointer_element(index),
             )
             .into()),
-            TypeVariant::Capability => Ok(dynamic_value::Builder::Capability(
-                dynamic_value::Capability,
+            TypeVariant::Capability(cs) => Ok(dynamic_value::Builder::Capability(
+                dynamic_value::Capability::new(cs.into()),
             )),
         }
     }
@@ -340,7 +340,7 @@ impl<'a> Builder<'a> {
             (TypeVariant::AnyPointer, _) => {
                 Err(Error::from_kind(ErrorKind::ListAnyPointerNotSupported))
             }
-            (TypeVariant::Capability, dynamic_value::Reader::Capability(_)) => {
+            (TypeVariant::Capability(_), dynamic_value::Reader::Capability(_)) => {
                 Err(Error::from_kind(ErrorKind::ListCapabilityNotSupported))
             }
             (_, _) => Err(Error::from_kind(ErrorKind::TypeMismatch)),
@@ -364,7 +364,7 @@ impl<'a> Builder<'a> {
             | TypeVariant::Float64
             | TypeVariant::Enum(_)
             | TypeVariant::Struct(_)
-            | TypeVariant::Capability => Err(Error::from_kind(ErrorKind::ExpectedAListOrBlob)),
+            | TypeVariant::Capability(_) => Err(Error::from_kind(ErrorKind::ExpectedAListOrBlob)),
             TypeVariant::Text => Ok(self
                 .builder
                 .get_pointer_element(index)

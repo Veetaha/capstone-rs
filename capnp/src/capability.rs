@@ -306,7 +306,7 @@ pub trait FromTypelessPipeline {
 
 /// Trait implemented (via codegen) by all user-defined capability client types.
 #[cfg(feature = "alloc")]
-pub trait FromClientHook {
+pub trait FromClientHook: crate::introspect::Introspect {
     /// Wraps a client hook to create a new client.
     fn new(hook: Box<dyn ClientHook>) -> Self;
 
@@ -359,6 +359,73 @@ impl Client {
     /// the capability does not resolve, the call results will propagate the error.
     pub fn when_resolved(&self) -> Promise<(), Error> {
         self.hook.when_resolved()
+    }
+}
+
+#[cfg(feature = "alloc")]
+// This is an untyped dispatch for an untyped server, which forwards calls directly to dispatch_call
+pub struct UntypedDispatch<_T> {
+    pub server: _T,
+}
+
+#[cfg(feature = "alloc")]
+impl<_T: Server> ::core::ops::Deref for UntypedDispatch<_T> {
+    type Target = _T;
+    fn deref(&self) -> &_T {
+        &self.server
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<_T: Server> ::core::ops::DerefMut for UntypedDispatch<_T> {
+    fn deref_mut(&mut self) -> &mut _T {
+        &mut self.server
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<_T: Server> crate::capability::Server for UntypedDispatch<_T> {
+    async fn dispatch_call(
+        &self,
+        interface_id: u64,
+        method_id: u16,
+        params: crate::capability::Params<any_pointer::Owned>,
+        results: crate::capability::Results<any_pointer::Owned>,
+    ) -> Result<(), crate::Error> {
+        self.server
+            .dispatch_call(interface_id, method_id, params, results)
+            .await
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl crate::introspect::Introspect for Client {
+    fn introspect() -> crate::introspect::Type {
+        crate::introspect::TypeVariant::Capability(crate::introspect::RawCapabilitySchema {
+            encoded_node: &[],
+        })
+        .into()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<_S: Server + 'static> crate::capability::FromServer<_S> for Client {
+    type Dispatch = UntypedDispatch<_S>;
+    fn from_server(s: _S) -> UntypedDispatch<_S> {
+        UntypedDispatch { server: s }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl crate::capability::FromClientHook for Client {
+    fn new(hook: Box<dyn (ClientHook)>) -> Self {
+        Self { hook }
+    }
+    fn into_client_hook(self) -> Box<dyn (ClientHook)> {
+        self.hook
+    }
+    fn as_client_hook(&self) -> &dyn (ClientHook) {
+        &*self.hook
     }
 }
 

@@ -157,8 +157,10 @@ impl<'a> Reader<'a> {
                         };
                         Ok(dynamic_value::Reader::AnyPointer(a1))
                     }
-                    (TypeVariant::Capability, value::Interface(())) => {
-                        Ok(dynamic_value::Reader::Capability(dynamic_value::Capability))
+                    (TypeVariant::Capability(cs), value::Interface(())) => {
+                        Ok(dynamic_value::Reader::Capability(
+                            dynamic_value::Capability::new(cs.into()),
+                        ))
                     }
                     _ => Err(Error::from_kind(ErrorKind::FieldAndDefaultMismatch)),
                 }
@@ -398,9 +400,11 @@ impl<'a> Builder<'a> {
                         )
                         .into())
                     }
-                    (TypeVariant::Capability, value::Interface(())) => Ok(
-                        dynamic_value::Builder::Capability(dynamic_value::Capability),
-                    ),
+                    (TypeVariant::Capability(cs), value::Interface(())) => {
+                        Ok(dynamic_value::Builder::Capability(
+                            dynamic_value::Capability::new(cs.into()),
+                        ))
+                    }
                     _ => Err(Error::from_kind(ErrorKind::FieldAndDefaultMismatch)),
                 }
             }
@@ -440,6 +444,28 @@ impl<'a> Builder<'a> {
     pub fn has_named(&self, field_name: &str) -> Result<bool> {
         let field = self.schema.get_field_by_name(field_name)?;
         self.has(field)
+    }
+
+    // Directly sets a field capability pointer to the given index.
+    // TODO: Refactor how capabilities work so this can be removed.
+    pub unsafe fn set_capability_to_int(&mut self, field: Field, value: u32) -> Result<()> {
+        assert_eq!(self.schema.raw, field.parent.raw);
+        self.set_in_union(field)?;
+        let ty = field.get_type();
+        match field.get_proto().which()? {
+            field::Slot(slot) => {
+                let offset = slot.get_offset() as usize;
+                match ty.which() {
+                    TypeVariant::Capability(_) => {
+                        let mut builder = self.builder.reborrow().get_pointer_field(offset);
+                        builder.set_capability_directly(value);
+                        Ok(())
+                    }
+                    _ => Err(Error::from_kind(ErrorKind::TypeMismatch)),
+                }
+            }
+            _ => Err(Error::from_kind(ErrorKind::TypeMismatch)),
+        }
     }
 
     pub fn set(&mut self, field: Field, value: dynamic_value::Reader<'_>) -> Result<()> {
@@ -546,7 +572,7 @@ impl<'a> Builder<'a> {
                             )),
                         }
                     }
-                    (TypeVariant::Capability, _, _) => Err(Error::from_kind(
+                    (TypeVariant::Capability(_), _, _) => Err(Error::from_kind(
                         ErrorKind::SettingDynamicCapabilitiesIsUnsupported,
                     )),
                     _ => Err(Error::from_kind(ErrorKind::TypeMismatch)),
@@ -736,7 +762,7 @@ impl<'a> Builder<'a> {
                     | TypeVariant::Struct(_)
                     | TypeVariant::List(_)
                     | TypeVariant::AnyPointer
-                    | TypeVariant::Capability => {
+                    | TypeVariant::Capability(_) => {
                         self.builder.reborrow().get_pointer_field(offset).clear();
                         Ok(())
                     }
