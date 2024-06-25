@@ -137,6 +137,10 @@ impl CompilerCommand {
         self
     }
 
+    pub fn file_count(&self) -> usize {
+        self.files.len()
+    }
+
     /// Adds a --src-prefix flag. For all files specified for compilation that start
     /// with `prefix`, removes the prefix when computing output filenames.
     pub fn src_prefix<P>(&mut self, prefix: P) -> &mut Self

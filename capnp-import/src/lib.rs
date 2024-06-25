@@ -83,6 +83,12 @@ where
         }
     }
 
+    if cmd.file_count() == 0 {
+        return Err(eyre!(
+            "No capnp files found, did you mean to use an absolute path instead of a relative one? Potential directories for absolute paths: {:#?}",
+            searchpaths
+        ));
+    }
     cmd.run()?;
     let mut helperfile = TokenStream2::new();
     for entry_result in WalkDir::new(output_dir.path()) {
@@ -159,6 +165,17 @@ mod tests {
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
+    }
+
+    #[should_panic]
+    #[test]
+    fn search_fail2_test() -> () {
+        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("tests");
+        std::env::set_var("DEP_TEST_WRONG_DIR", folder.as_os_str());
+        // Should fail because DEP_TEST_WRONG_DIR is in the wrong format
+        let _ = process_inner(["/folder-test/*.capnp"]).unwrap();
     }
 
     #[should_panic]
