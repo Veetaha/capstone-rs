@@ -2741,6 +2741,15 @@ impl Default for CapTableReader {
 
 #[cfg(feature = "alloc")]
 impl CapTableReader {
+    pub fn len(&self) -> usize {
+        match *self {
+            Self::Plain(phooks) => {
+                let hooks: &Vec<Option<Box<dyn ClientHook>>> = unsafe { &*phooks };
+                hooks.len()
+            }
+        }
+    }
+
     pub fn extract_cap(&self, index: usize) -> Option<Box<dyn ClientHook>> {
         match *self {
             Self::Plain(hooks) => {
