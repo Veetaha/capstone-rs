@@ -19,7 +19,6 @@
 // THE SOFTWARE.
 
 use core::slice;
-use core::u64;
 #[cfg(feature = "alloc")]
 use smallvec::SmallVec;
 
