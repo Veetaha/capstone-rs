@@ -19,3 +19,6 @@ quote.workspace = true
 # For testing
 capstone-import.workspace = true
 tokio.workspace = true
+
+[lints]
+workspace = true

@@ -195,6 +195,55 @@ async fn disconnector_disconnects() {
     }
 }
 
+#[tokio::test]
+async fn disconnector_disconnects_2() {
+    let pool = tokio::task::LocalSet::new();
+    let (mut client_rpc_system, server_rpc_system) = disconnector_setup();
+
+    // Grab the disconnector before calling bootstrap().
+    // At one point, this caused the disconnector to not work.
+    let disconnector: capnp_rpc::Disconnector<capnp_rpc::rpc_twoparty_capnp::Side> =
+        client_rpc_system.get_disconnector();
+
+    let client: test_capnp::bootstrap::Client =
+        client_rpc_system.bootstrap(rpc_twoparty_capnp::Side::Server);
+
+    spawn(&pool, client_rpc_system);
+
+    let (tx, rx) = oneshot::channel::<()>();
+
+    //send on tx when server_rpc_system exits
+    spawn(
+        &pool,
+        server_rpc_system.map(|x| {
+            tx.send(()).expect("sending on tx");
+            x
+        }),
+    );
+
+    pool.run_until(async move {
+        //make sure we can make an RPC system call
+        client
+            .test_interface_request()
+            .send()
+            .promise
+            .await
+            .unwrap();
+
+        //disconnect from the server; comment this next line out to see the test fail
+        disconnector.await.unwrap();
+
+        rx.await.expect("rpc system should exit");
+
+        //make sure we can't use client any more (because the server is disconnected)
+        match client.test_interface_request().send().promise.await {
+            Err(ref e) if e.kind == ::capnp::ErrorKind::Disconnected => (),
+            _ => panic!("Should have gotten a 'disconnected' error."),
+        }
+    })
+    .await;
+}
+
 async fn rpc_top_level<F, G>(main: F)
 where
     F: FnOnce(test_capnp::bootstrap::Client) -> G,
@@ -749,12 +798,10 @@ async fn embargo_success() {
             call5.promise,
         ])
         .map(|responses| {
-            let mut counter = 0;
-            for r in responses?.into_iter() {
-                if counter != r.get()?.get_n() {
+            for (counter, r) in responses?.into_iter().enumerate() {
+                if counter != r.get()?.get_n() as usize {
                     return Err(Error::failed("calls arrived out of order".to_string()));
                 }
-                counter += 1;
             }
             Ok(())
         })

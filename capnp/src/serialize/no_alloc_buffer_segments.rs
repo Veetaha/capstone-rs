@@ -4,19 +4,24 @@ use crate::message::ReaderOptions;
 use crate::message::ReaderSegments;
 use crate::private::units::BYTES_PER_WORD;
 use crate::{Error, ErrorKind, Result};
-use core::ops::Deref;
 
 use super::SEGMENTS_COUNT_LIMIT;
 
 const U32_LEN_IN_BYTES: usize = core::mem::size_of::<u32>();
 
-struct ReadSegmentTableResult {
-    segments_count: usize,
-    segment_table_length_bytes: usize,
-    total_segments_length_bytes: usize,
+/// Information about a message read from its segment table.
+pub struct NoAllocSegmentTableInfo {
+    /// The number of segments in the message.
+    pub segments_count: usize,
+
+    /// The number of bytes in the segment table.
+    pub segment_table_length_bytes: usize,
+
+    /// The total number of bytes in all segments of the message.
+    pub total_segments_length_bytes: usize,
 }
 
-fn read_segment_table(slice: &[u8], options: ReaderOptions) -> Result<ReadSegmentTableResult> {
+fn read_segment_table(slice: &[u8], options: ReaderOptions) -> Result<NoAllocSegmentTableInfo> {
     let mut remaining = slice;
 
     verify_alignment(remaining.as_ptr())?;
@@ -77,7 +82,7 @@ fn read_segment_table(slice: &[u8], options: ReaderOptions) -> Result<ReadSegmen
         )));
     }
 
-    Ok(ReadSegmentTableResult {
+    Ok(NoAllocSegmentTableInfo {
         segments_count,
         segment_table_length_bytes: expected_data_offset,
         total_segments_length_bytes,
@@ -88,7 +93,13 @@ fn read_segment_table(slice: &[u8], options: ReaderOptions) -> Result<ReadSegmen
 pub type NoAllocSliceSegments<'b> = NoAllocBufferSegments<&'b [u8]>;
 
 enum NoAllocBufferSegmentType {
-    SingleSegment(usize, usize),
+    /// The buffer contains a single segment, with length in bytes given by
+    /// the value of the `usize` parameter. The segment starts at byte index
+    /// 8 of the buffer.
+    SingleSegment(usize),
+
+    /// The buffer contains multiple segments. In this case, the segment table
+    /// needs to be re-parsed on each call to `get_segment()`.
     MultipleSegments,
 }
 
@@ -107,13 +118,35 @@ pub struct NoAllocBufferSegments<T> {
     segment_type: NoAllocBufferSegmentType,
 }
 
+impl<T> NoAllocBufferSegments<T> {
+    /// Constructs a NoAllocBufferSegments from a buffer and a [`NoAllocSegmentTableInfo`].
+    /// This method is used internally by [`NoAllocBufferSegments::from_slice()`]
+    /// and [`NoAllocBufferSegments::from_buffer()`]. It has been made public to allow for
+    /// situations where the segment table is read by nonstandard means.
+    pub fn from_segment_table_info(buffer: T, info: NoAllocSegmentTableInfo) -> Self {
+        if info.segments_count == 1 {
+            Self {
+                buffer,
+                segment_type: NoAllocBufferSegmentType::SingleSegment(
+                    info.total_segments_length_bytes,
+                ),
+            }
+        } else {
+            Self {
+                buffer,
+                segment_type: NoAllocBufferSegmentType::MultipleSegments,
+            }
+        }
+    }
+}
+
 impl<'b> NoAllocBufferSegments<&'b [u8]> {
     /// Reads a serialized message (including a segment table) from a buffer and takes ownership, without copying.
     /// The buffer is allowed to extend beyond the end of the message. On success, updates `slice` to point
     /// to the remaining bytes beyond the end of the message.
     ///
-    /// ALIGNMENT: If the "unaligned" feature is enabled, then there are no alignment requirements on `buffer`.
-    /// Otherwise, `buffer` must be 8-byte aligned (attempts to read the message will trigger errors).
+    /// ALIGNMENT: If the "unaligned" feature is enabled, then there are no alignment requirements on `slice`.
+    /// Otherwise, `slice` must be 8-byte aligned (attempts to read the message will trigger errors).
     pub fn from_slice(slice: &mut &'b [u8], options: ReaderOptions) -> Result<Self> {
         let segment_table_info = read_segment_table(slice, options)?;
 
@@ -123,52 +156,23 @@ impl<'b> NoAllocBufferSegments<&'b [u8]> {
         let message = &slice[..message_length];
         *slice = &slice[message_length..];
 
-        if segment_table_info.segments_count == 1 {
-            Ok(Self {
-                buffer: message,
-                segment_type: NoAllocBufferSegmentType::SingleSegment(
-                    segment_table_info.segment_table_length_bytes,
-                    message_length,
-                ),
-            })
-        } else {
-            Ok(Self {
-                buffer: message,
-                segment_type: NoAllocBufferSegmentType::MultipleSegments,
-            })
-        }
+        Ok(Self::from_segment_table_info(message, segment_table_info))
     }
 }
 
-impl<T: Deref<Target = [u8]>> NoAllocBufferSegments<T> {
+impl<T: AsRef<[u8]>> NoAllocBufferSegments<T> {
     /// Reads a serialized message (including a segment table) from a buffer and takes ownership, without copying.
     /// The buffer is allowed to extend beyond the end of the message.
     ///
     /// ALIGNMENT: If the "unaligned" feature is enabled, then there are no alignment requirements on `buffer`.
     /// Otherwise, `buffer` must be 8-byte aligned (attempts to read the message will trigger errors).
     pub fn from_buffer(buffer: T, options: ReaderOptions) -> Result<Self> {
-        let segment_table_info = read_segment_table(&buffer, options)?;
-        let message_length = segment_table_info.segment_table_length_bytes
-            + segment_table_info.total_segments_length_bytes;
-
-        if segment_table_info.segments_count == 1 {
-            Ok(Self {
-                buffer,
-                segment_type: NoAllocBufferSegmentType::SingleSegment(
-                    segment_table_info.segment_table_length_bytes,
-                    message_length,
-                ),
-            })
-        } else {
-            Ok(Self {
-                buffer,
-                segment_type: NoAllocBufferSegmentType::MultipleSegments,
-            })
-        }
+        let segment_table_info = read_segment_table(buffer.as_ref(), options)?;
+        Ok(Self::from_segment_table_info(buffer, segment_table_info))
     }
 }
 
-impl<T: Deref<Target = [u8]>> ReaderSegments for NoAllocBufferSegments<T> {
+impl<T: AsRef<[u8]>> ReaderSegments for NoAllocBufferSegments<T> {
     fn get_segment(&self, idx: u32) -> Option<&[u8]> {
         // panic safety: we are doing a lot of `unwrap` here. We assume that underlying message slice
         // holds valid capnp message - we already verified slice in read_segment_table(),
@@ -177,15 +181,15 @@ impl<T: Deref<Target = [u8]>> ReaderSegments for NoAllocBufferSegments<T> {
         let idx: usize = idx.try_into().unwrap();
 
         match self.segment_type {
-            NoAllocBufferSegmentType::SingleSegment(start, end) => {
+            NoAllocBufferSegmentType::SingleSegment(length_bytes) => {
                 if idx == 0 {
-                    Some(&self.buffer[start..end])
+                    Some(&self.buffer.as_ref()[8..8 + length_bytes])
                 } else {
                     None
                 }
             }
             NoAllocBufferSegmentType::MultipleSegments => {
-                let mut buf = &*self.buffer;
+                let mut buf = self.buffer.as_ref();
 
                 let segments_count = u32_to_segments_count(read_u32_le(&mut buf).unwrap()).unwrap();
 
@@ -206,7 +210,7 @@ impl<T: Deref<Target = [u8]>> ReaderSegments for NoAllocBufferSegments<T> {
                 let segment_length =
                     u32_to_segment_length_bytes(read_u32_le(&mut buf).unwrap()).unwrap();
 
-                Some(&self.buffer[segment_offset..(segment_offset + segment_length)])
+                Some(&self.buffer.as_ref()[segment_offset..(segment_offset + segment_length)])
             }
         }
     }
@@ -218,7 +222,7 @@ impl<T: Deref<Target = [u8]>> ReaderSegments for NoAllocBufferSegments<T> {
         match self.segment_type {
             NoAllocBufferSegmentType::SingleSegment { .. } => 1,
             NoAllocBufferSegmentType::MultipleSegments => {
-                u32_to_segments_count(read_u32_le(&mut &*self.buffer).unwrap()).unwrap()
+                u32_to_segments_count(read_u32_le(&mut self.buffer.as_ref()).unwrap()).unwrap()
             }
         }
     }
@@ -276,7 +280,7 @@ fn u32_to_segments_count(val: u32) -> Result<usize> {
     result.ok_or_else(|| Error::from_kind(ErrorKind::FourByteLengthTooBigForUSize))
 }
 
-/// Converts 32 bit vlaue which represents encoded segment length to usize segment length in bytes
+/// Converts 32 bit value which represents encoded segment length to usize segment length in bytes
 fn u32_to_segment_length_bytes(val: u32) -> Result<usize> {
     // This convertion can fail on 8 or 16 bit machines.
     let length_in_words: Option<usize> = val.try_into().ok();

@@ -25,3 +25,6 @@ futures-util.workspace = true
 capstone = { workspace = true, features = ["quickcheck"] }
 tokio = { workspace = true, features = ["io-util", "rt"] }
 quickcheck = "1"
+
+[lints]
+workspace = true

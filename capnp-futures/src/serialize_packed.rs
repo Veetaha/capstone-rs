@@ -99,9 +99,13 @@ where
             match *stage {
                 PackedReadStage::Start => {
                     let mut reader = tokio::io::ReadBuf::new(&mut buf[*buf_pos..2]);
+                    let prev = reader.remaining();
                     match Pin::new(&mut *inner).poll_read(cx, &mut reader)? {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(()) => {
+                            if prev == reader.remaining() {
+                                return Poll::Ready(Ok(()));
+                            }
                             *buf_pos += reader.capacity() - reader.remaining();
                             if *buf_pos >= 2 {
                                 let tag = buf[0];
@@ -115,6 +119,12 @@ where
                                     if *buf_size == 9 {
                                         // add a byte for the count of pass-through words
                                         *buf_size = 10
+                                    }
+                                    if *buf_pos >= *buf_size {
+                                        // Skip the BufferingWord stage, because
+                                        // there is nothing left to buffer.
+                                        *stage = PackedReadStage::DrainingBuffer;
+                                        *buf_pos = 1;
                                     }
                                 }
                             }
@@ -138,9 +148,15 @@ where
                 }
                 PackedReadStage::BufferingWord => {
                     let mut reader = tokio::io::ReadBuf::new(&mut buf[*buf_pos..*buf_size]);
+                    let prev = reader.remaining();
                     match Pin::new(&mut *inner).poll_read(cx, &mut reader)? {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(()) => {
+                            if prev == reader.remaining() {
+                                return Poll::Ready(Err(std::io::Error::from(
+                                    std::io::ErrorKind::UnexpectedEof,
+                                )));
+                            }
                             *buf_pos += reader.capacity() - reader.remaining();
                             if *buf_pos >= *buf_size {
                                 *stage = PackedReadStage::DrainingBuffer;
@@ -189,6 +205,9 @@ where
                             Poll::Pending => return Poll::Pending,
                             Poll::Ready(()) => {
                                 let n = prev_bound - reader.remaining();
+                                if n == 0 {
+                                    return Poll::Ready(Ok(()));
+                                }
                                 if n >= *num_run_bytes_remaining {
                                     *stage = PackedReadStage::Start;
                                 }
@@ -529,7 +548,7 @@ where
 #[cfg(test)]
 pub mod test {
     use crate::serialize::test::{BlockingRead, BlockingWrite};
-    use crate::serialize_packed::{PackedRead, PackedWrite};
+    use crate::serialize_packed::{try_read_message, PackedRead, PackedWrite};
     use capnp::message::ReaderSegments;
     use quickcheck::{quickcheck, TestResult};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -712,5 +731,30 @@ pub mod test {
     #[test]
     fn check_packed_round_trip_async() {
         quickcheck(round_trip as fn(usize, usize, Vec<Vec<capnp::Word>>) -> TestResult);
+    }
+
+    #[test]
+    fn read_empty() {
+        let words = [];
+        // Before https://github.com/capnproto/capnproto-rust/pull/446
+        // this would loop forever.
+        let message = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(Box::pin(try_read_message(&words[..], Default::default())))
+            .expect("reading");
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn eof_mid_message() {
+        let words = [0xfe, 0x3, 0x3];
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(Box::pin(try_read_message(&words[..], Default::default())));
+
+        match result {
+            Ok(_) => panic!("expected error"),
+            Err(e) => assert_eq!(e.kind, capnp::ErrorKind::PrematureEndOfFile),
+        }
     }
 }

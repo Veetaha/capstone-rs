@@ -1717,6 +1717,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn long_u64_list() {
         use crate::test_capnp::test_all_types;
@@ -1759,6 +1760,7 @@ mod tests {
         message.init_root::<test_all_types::Builder<'_>>();
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn long_struct_list() {
         use crate::test_capnp::test_lists;
@@ -1788,6 +1790,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn long_list_list() {
         use crate::test_capnp::test_lists;
@@ -2188,6 +2191,68 @@ mod tests {
         CheckTestMessage::check_test_message(message_reader.get().unwrap());
     }
 
+    #[test]
+    fn test_read_message_no_alloc() {
+        use crate::test_capnp::test_all_types;
+
+        let mut typed_builder = TypedBuilder::<test_all_types::Owned>::new_default();
+        init_test_message(typed_builder.init_root());
+
+        CheckTestMessage::check_test_message(typed_builder.get_root().unwrap());
+        CheckTestMessage::check_test_message(typed_builder.get_root_as_reader().unwrap());
+
+        let mut buffer = Word::allocate_zeroed_vec(512);
+
+        capnp::serialize::write_message(
+            Word::words_to_bytes_mut(&mut buffer),
+            typed_builder.borrow_inner(),
+        )
+        .unwrap();
+
+        let mut read_buffer = Word::allocate_zeroed_vec(512);
+        let reader = capnp::serialize::read_message_no_alloc(
+            &mut Word::words_to_bytes(&buffer),
+            Word::words_to_bytes_mut(&mut read_buffer),
+            ReaderOptions::new(),
+        )
+        .unwrap();
+        let message_reader = TypedReader::<_, test_all_types::Owned>::new(reader);
+        CheckTestMessage::check_test_message(message_reader.get().unwrap());
+    }
+
+    #[test]
+    fn test_read_message_no_alloc_multi_segment() {
+        use crate::test_capnp::test_all_types;
+
+        let builder_options = message::HeapAllocator::new()
+            .first_segment_words(1)
+            .allocation_strategy(::capnp::message::AllocationStrategy::FixedSize);
+        let mut typed_builder =
+            TypedBuilder::<test_all_types::Owned>::new(message::Builder::new(builder_options));
+        init_test_message(typed_builder.init_root());
+
+        CheckTestMessage::check_test_message(typed_builder.get_root().unwrap());
+        CheckTestMessage::check_test_message(typed_builder.get_root_as_reader().unwrap());
+
+        let mut buffer = Word::allocate_zeroed_vec(512);
+
+        capnp::serialize::write_message(
+            Word::words_to_bytes_mut(&mut buffer),
+            typed_builder.borrow_inner(),
+        )
+        .unwrap();
+
+        let mut read_buffer = Word::allocate_zeroed_vec(512);
+        let reader = capnp::serialize::read_message_no_alloc(
+            &mut Word::words_to_bytes(&buffer),
+            Word::words_to_bytes_mut(&mut read_buffer),
+            ReaderOptions::new(),
+        )
+        .unwrap();
+        let message_reader = TypedReader::<_, test_all_types::Owned>::new(reader);
+        CheckTestMessage::check_test_message(message_reader.get().unwrap());
+    }
+
     #[cfg_attr(miri, ignore)]
     #[test]
     fn test_raw_code_generator_request_path() {
@@ -2203,4 +2268,14 @@ mod tests {
         assert!(!generator_context.node_map.is_empty());
         assert!(!generator_context.scope_map.is_empty());
     }
+
+    // At one point, the lifetimes in the generated code made the following function
+    // fail to typecheck.
+    //#[allow(unused)]
+    //fn set_struct_list<'a, 'b>(
+    //    mut b: crate::test_capnp::test_all_types::Builder<'a>,
+    //    r: crate::test_capnp::test_all_types::Reader<'b>,
+    //) -> ::capnp::Result<()> {
+    //    b.set_struct_list(r.get_struct_list()?)
+    //}
 }

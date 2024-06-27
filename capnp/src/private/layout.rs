@@ -2030,7 +2030,7 @@ mod wire_helpers {
 
                 (*reff).set_list_size_and_count(element_size, value.element_count);
 
-                // Be careful to avoid coping any bytes past the end of the list.
+                // Be careful to avoid copying any bytes past the end of the list.
                 // TODO(perf) Is ptr::copy_nonoverlapping faster if word-aligned?
                 // If so, then perhaps we should only drop to the byte-index level
                 // in the canonicalize=true case.
@@ -2750,6 +2750,10 @@ impl CapTableReader {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn extract_cap(&self, index: usize) -> Option<Box<dyn ClientHook>> {
         match *self {
             Self::Plain(hooks) => {
@@ -3210,7 +3214,7 @@ impl<'a> PointerBuilder<'a> {
                 self.segment_id,
                 self.cap_table.into_reader(),
                 self.pointer,
-                ::core::i32::MAX,
+                i32::MAX,
             )
         }
     }
@@ -3505,11 +3509,7 @@ impl<'a> StructReader<'a> {
 
     #[inline]
     pub fn is_pointer_field_null(&self, ptr_index: WirePointerCount) -> bool {
-        if ptr_index < self.pointer_count as WirePointerCount {
-            unsafe { (*self.pointers.add(ptr_index)).is_null() }
-        } else {
-            true
-        }
+        self.get_pointer_field(ptr_index).is_null()
     }
 
     pub fn total_size(&self) -> Result<MessageSize> {

@@ -73,15 +73,12 @@ use alloc::vec::Vec;
 use core::convert::From;
 
 use crate::any_pointer;
-#[cfg(feature = "alloc")]
 use crate::private::arena::{BuilderArena, BuilderArenaImpl};
 use crate::private::arena::{ReaderArena, ReaderArenaImpl};
 use crate::private::layout;
 use crate::private::units::BYTES_PER_WORD;
-#[cfg(feature = "alloc")]
 use crate::traits::{FromPointerBuilder, SetPointerBuilder};
 use crate::traits::{FromPointerReader, Owned};
-#[cfg(feature = "alloc")]
 use crate::OutputSegments;
 use crate::Result;
 
@@ -344,7 +341,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<A, T> From<Builder<A>> for TypedReader<Builder<A>, T>
 where
     A: Allocator,
@@ -356,7 +352,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<A, T> From<TypedBuilder<T, A>> for TypedReader<Builder<A>, T>
 where
     A: Allocator,
@@ -404,7 +399,6 @@ pub unsafe trait Allocator {
 }
 
 /// A container used to build a message.
-#[cfg(feature = "alloc")]
 pub struct Builder<A>
 where
     A: Allocator,
@@ -412,10 +406,8 @@ where
     arena: BuilderArenaImpl<A>,
 }
 
-#[cfg(feature = "alloc")]
 unsafe impl<A> Send for Builder<A> where A: Send + Allocator {}
 
-#[cfg(feature = "alloc")]
 fn _assert_kinds() {
     fn _assert_send<T: Send>() {}
     fn _assert_reader<S: ReaderSegments + Send>() {
@@ -426,7 +418,6 @@ fn _assert_kinds() {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<A> Builder<A>
 where
     A: Allocator,
@@ -517,7 +508,7 @@ where
             self,
             ReaderOptions {
                 traversal_limit_in_words: None,
-                nesting_limit: i32::max_value(),
+                nesting_limit: i32::MAX,
             },
         )
     }
@@ -533,7 +524,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<A> ReaderSegments for Builder<A>
 where
     A: Allocator,
@@ -545,6 +535,19 @@ where
     fn len(&self) -> usize {
         self.get_segments_for_output().len()
     }
+}
+
+// Defined separately because the A=HeapAllocator default type
+// argument is not allowed in no-alloc mode.
+// TODO(apibump): remove the A=HeapAllocator thing above?
+#[cfg(not(feature = "alloc"))]
+pub struct TypedBuilder<T, A>
+where
+    T: Owned,
+    A: Allocator,
+{
+    marker: ::core::marker::PhantomData<T>,
+    message: Builder<A>,
 }
 
 /// Stongly typed variant of the [Builder]
@@ -569,11 +572,20 @@ where
     T: Owned,
 {
     pub fn new_default() -> Self {
-        Self::new(Builder::new_default())
+        Default::default()
     }
 }
 
 #[cfg(feature = "alloc")]
+impl<T> Default for TypedBuilder<T, HeapAllocator>
+where
+    T: Owned,
+{
+    fn default() -> Self {
+        Self::new(Builder::default())
+    }
+}
+
 impl<T, A> TypedBuilder<T, A>
 where
     T: Owned,
@@ -623,7 +635,6 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<T, A> From<Builder<A>> for TypedBuilder<T, A>
 where
     T: Owned,
@@ -764,6 +775,15 @@ impl Builder<HeapAllocator> {
     /// Constructs a new `message::Builder<HeapAllocator>` whose first segment has length
     /// `SUGGESTED_FIRST_SEGMENT_WORDS`.
     pub fn new_default() -> Self {
+        Default::default()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Default for Builder<HeapAllocator> {
+    /// Constructs a new `message::Builder<HeapAllocator>` whose first segment has length
+    /// `SUGGESTED_FIRST_SEGMENT_WORDS`.
+    fn default() -> Self {
         Self::new(HeapAllocator::new())
     }
 }
@@ -776,7 +796,7 @@ impl Builder<HeapAllocator> {
 /// part of the buffer upon `deallocate_segment()`.
 ///
 /// You can reuse a `ScratchSpaceHeapAllocator` by calling `message::Builder::into_allocator()`,
-/// or by initally passing it to `message::Builder::new()` as a `&mut ScratchSpaceHeapAllocator`.
+/// or by initially passing it to `message::Builder::new()` as a `&mut ScratchSpaceHeapAllocator`.
 /// Such reuse can save significant amounts of zeroing.
 #[cfg(feature = "alloc")]
 pub struct ScratchSpaceHeapAllocator<'a> {
@@ -849,16 +869,104 @@ unsafe impl<'a> Allocator for ScratchSpaceHeapAllocator<'a> {
     }
 
     unsafe fn deallocate_segment(&mut self, ptr: *mut u8, word_size: u32, words_used: u32) {
-        if ptr == self.scratch_space.as_mut_ptr() {
+        let seg_ptr = self.scratch_space.as_mut_ptr();
+        if ptr == seg_ptr {
             // Rezero the slice to allow reuse of the allocator. We only need to write
             // words that we know might contain nonzero values.
             unsafe {
-                core::ptr::write_bytes(ptr, 0u8, (words_used as usize) * BYTES_PER_WORD);
+                core::ptr::write_bytes(
+                    seg_ptr, // miri isn't happy if we use ptr instead
+                    0u8,
+                    (words_used as usize) * BYTES_PER_WORD,
+                );
             }
             self.scratch_space_allocated = false;
         } else {
             self.allocator
                 .deallocate_segment(ptr, word_size, words_used);
+        }
+    }
+}
+
+/// An Allocator whose first and only segment is a backed by a user-provided buffer.
+/// If the segment fills up, subsequent allocations trigger panics.
+///
+/// The main purpose of this struct is to be used in situations where heap allocation
+/// is not available.
+///
+/// Recall that an `Allocator` implementation must ensure that allocated segments are
+/// initially *zeroed*. `SingleSegmentAllocator` ensures that is the case by zeroing
+/// the entire buffer upon initial construction, and then zeroing any *potentially used*
+/// part of the buffer upon `deallocate_segment()`.
+///
+/// You can reuse a `SingleSegmentAllocator` by calling `message::Builder::into_allocator()`,
+/// or by initially passing it to `message::Builder::new()` as a `&mut SingleSegmentAllocator`.
+/// Such reuse can save significant amounts of zeroing.
+pub struct SingleSegmentAllocator<'a> {
+    segment: &'a mut [u8],
+    segment_allocated: bool,
+}
+
+impl<'a> SingleSegmentAllocator<'a> {
+    /// Writes zeroes into the entire buffer and constructs a new allocator from it.
+    ///
+    /// If the buffer is large, this operation could be relatively expensive. If you want to reuse
+    /// the same scratch space in a later message, you should reuse the entire
+    /// `SingleSegmentAllocator`, to avoid paying this full cost again.
+    pub fn new(segment: &'a mut [u8]) -> SingleSegmentAllocator<'a> {
+        #[cfg(not(feature = "unaligned"))]
+        {
+            if segment.as_ptr() as usize % BYTES_PER_WORD != 0 {
+                panic!(
+                    "Segment must be 8-byte aligned, or you must enable the \"unaligned\" \
+                        feature in the capnp crate"
+                );
+            }
+        }
+
+        // We need to ensure that the buffer is zeroed.
+        for b in &mut segment[..] {
+            *b = 0;
+        }
+        SingleSegmentAllocator {
+            segment,
+            segment_allocated: false,
+        }
+    }
+}
+
+unsafe impl<'a> Allocator for SingleSegmentAllocator<'a> {
+    fn allocate_segment(&mut self, minimum_size: u32) -> (*mut u8, u32) {
+        let available_word_count = self.segment.len() / BYTES_PER_WORD;
+        if (minimum_size as usize) > available_word_count {
+            panic!(
+                "Allocation too large: asked for {minimum_size} words, \
+                    but only {available_word_count} are available."
+            )
+        } else if self.segment_allocated {
+            panic!("Tried to allocated two segments in a SingleSegmentAllocator.")
+        } else {
+            self.segment_allocated = true;
+            (
+                self.segment.as_mut_ptr(),
+                (self.segment.len() / BYTES_PER_WORD) as u32,
+            )
+        }
+    }
+
+    unsafe fn deallocate_segment(&mut self, ptr: *mut u8, _word_size: u32, words_used: u32) {
+        let seg_ptr = self.segment.as_mut_ptr();
+        if ptr == seg_ptr {
+            // Rezero the slice to allow reuse of the allocator. We only need to write
+            // words that we know might contain nonzero values.
+            unsafe {
+                core::ptr::write_bytes(
+                    seg_ptr, // miri isn't happy if we use ptr instead
+                    0u8,
+                    (words_used as usize) * BYTES_PER_WORD,
+                );
+            }
+            self.segment_allocated = false;
         }
     }
 }

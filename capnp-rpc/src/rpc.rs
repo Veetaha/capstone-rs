@@ -211,7 +211,7 @@ impl<VatId> Drop for QuestionRef<VatId> {
         match &mut questions.slots[self.id as usize] {
             Some(q) => {
                 if let Ok(ref mut c) = *self.connection_state.connection.borrow_mut() {
-                    let mut message = c.new_outgoing_message(100); // XXX size hint
+                    let mut message = c.new_outgoing_message(5);
                     {
                         let root: message::Builder = message.get_body().unwrap().init_as();
                         let mut builder = root.init_finish();
@@ -538,7 +538,7 @@ impl<VatId> ConnectionState<VatId> {
 
         match *self.connection.borrow_mut() {
             Ok(ref mut c) => {
-                let mut message = c.new_outgoing_message(100); // TODO estimate size
+                let mut message = c.new_outgoing_message(5);
                 {
                     let builder = message
                         .get_body()
@@ -680,7 +680,7 @@ impl<VatId> ConnectionState<VatId> {
 
     fn send_unimplemented(
         connection_state: &Rc<Self>,
-        message: &Box<dyn crate::IncomingMessage>,
+        message: &dyn crate::IncomingMessage,
     ) -> capnp::Result<()> {
         let mut out_message = connection_state.new_outgoing_message(50)?; // XXX size hint
         {
@@ -738,7 +738,7 @@ impl<VatId> ConnectionState<VatId> {
             return Ok(());
         }
 
-        let mut response = connection_state.new_outgoing_message(50)?; // XXX size hint
+        let mut response = connection_state.new_outgoing_message(10)?;
 
         let result_exports = {
             let mut ret = response
@@ -1031,61 +1031,65 @@ impl<VatId> ConnectionState<VatId> {
                     Some(ref mut question) => {
                         question.is_awaiting_return = false;
                         match question.self_ref {
-                            Some(ref question_ref) => {
-                                match ret.which()? {
-                                    return_::Results(results) => {
-                                        let cap_table = Self::receive_caps(
-                                            &connection_state,
-                                            results?.get_cap_table()?,
-                                        )?;
+                            Some(ref question_ref) => match ret.which()? {
+                                return_::Results(results) => {
+                                    let cap_table = Self::receive_caps(
+                                        &connection_state,
+                                        results?.get_cap_table()?,
+                                    )?;
 
-                                        let question_ref =
-                                            question_ref.upgrade().expect("dangling question ref?");
-                                        let response = Response::new(
-                                            connection_state.clone(),
-                                            question_ref.clone(),
-                                            message,
-                                            cap_table,
-                                        );
-                                        question_ref.borrow_mut().fulfill(Promise::ok(response));
-                                    }
-                                    return_::Exception(e) => {
-                                        let tmp =
-                                            question_ref.upgrade().expect("dangling question ref?");
-                                        tmp.borrow_mut().reject(remote_exception_to_error(e?));
-                                    }
-                                    return_::Canceled(_) => {
-                                        Self::send_unimplemented(&connection_state, &message)?;
-                                    }
-                                    return_::ResultsSentElsewhere(_) => {
-                                        Self::send_unimplemented(&connection_state, &message)?;
-                                    }
-                                    return_::TakeFromOtherQuestion(id) => {
-                                        if let Some(answer) =
-                                            connection_state.answers.borrow_mut().slots.get_mut(&id)
-                                        {
-                                            if let Some(res) = answer.redirected_results.take() {
-                                                let tmp = question_ref
-                                                    .upgrade()
-                                                    .expect("dangling question ref?");
-                                                tmp.borrow_mut().fulfill(res);
-                                            } else {
-                                                return Err(Error::failed("return.takeFromOtherQuestion referenced a call that \
-                                                     did not use sendResultsTo.yourself.".to_string()));
-                                            }
+                                    let question_ref =
+                                        question_ref.upgrade().expect("dangling question ref?");
+                                    let response = Response::new(
+                                        connection_state.clone(),
+                                        question_ref.clone(),
+                                        message,
+                                        cap_table,
+                                    );
+                                    question_ref.borrow_mut().fulfill(Promise::ok(response));
+                                }
+                                return_::Exception(e) => {
+                                    let tmp =
+                                        question_ref.upgrade().expect("dangling question ref?");
+                                    tmp.borrow_mut().reject(remote_exception_to_error(e?));
+                                }
+                                return_::Canceled(_) => {
+                                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                                }
+                                return_::ResultsSentElsewhere(_) => {
+                                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                                }
+                                return_::TakeFromOtherQuestion(id) => {
+                                    if let Some(answer) =
+                                        connection_state.answers.borrow_mut().slots.get_mut(&id)
+                                    {
+                                        if let Some(res) = answer.redirected_results.take() {
+                                            let tmp = question_ref
+                                                .upgrade()
+                                                .expect("dangling question ref?");
+                                            tmp.borrow_mut().fulfill(res);
                                         } else {
-                                            return Err(Error::failed("return.takeFromOtherQuestion had invalid answer ID.".to_string()));
+                                            return Err(Error::failed("return.takeFromOtherQuestion referenced a call that \
+                                                     did not use sendResultsTo.yourself.".to_string()));
                                         }
-                                    }
-                                    return_::AcceptFromThirdParty(_) => {
-                                        drop(questions);
-                                        Self::send_unimplemented(&connection_state, &message)?;
+                                    } else {
+                                        return Err(Error::failed(
+                                            "return.takeFromOtherQuestion had invalid answer ID."
+                                                .to_string(),
+                                        ));
                                     }
                                 }
-                            }
+                                return_::AcceptFromThirdParty(_) => {
+                                    drop(questions);
+                                    Self::send_unimplemented(&connection_state, message.as_ref())?;
+                                }
+                            },
                             None => {
                                 if let return_::TakeFromOtherQuestion(_) = ret.which()? {
-                                    return Self::send_unimplemented(&connection_state, &message);
+                                    return Self::send_unimplemented(
+                                        &connection_state,
+                                        message.as_ref(),
+                                    );
                                 }
                                 // Looks like this question was canceled earlier, so `Finish`
                                 // was already sent, with `releaseResultCaps` set true so that
@@ -1155,7 +1159,7 @@ impl<VatId> ConnectionState<VatId> {
                 | message::ObsoleteDelete(_),
             )
             | Err(::capnp::NotInSchema(_)) => {
-                Self::send_unimplemented(&connection_state, &message)?;
+                Self::send_unimplemented(&connection_state, message.as_ref())?;
             }
         }
         Ok(())
@@ -1283,8 +1287,7 @@ impl<VatId> ConnectionState<VatId> {
         }
     }
 
-    fn get_innermost_client(&self, client_ref: &Box<dyn ClientHook>) -> Box<dyn ClientHook> {
-        let mut client = client_ref.clone();
+    fn get_innermost_client(&self, mut client: Box<dyn ClientHook>) -> Box<dyn ClientHook> {
         while let Some(inner) = client.get_resolved() {
             client = inner;
         }
@@ -1314,7 +1317,7 @@ impl<VatId> ConnectionState<VatId> {
 
             match resolution_result {
                 Ok(resolution) => {
-                    let resolution = connection_state.get_innermost_client(&resolution);
+                    let resolution = connection_state.get_innermost_client(resolution.clone());
 
                     let brand = resolution.get_brand();
 
@@ -1353,7 +1356,7 @@ impl<VatId> ConnectionState<VatId> {
                         resolve.set_promise_id(export_id);
                         let _export = Self::write_descriptor(
                             &connection_state,
-                            &resolution,
+                            resolution,
                             resolve.init_cap(),
                         )?;
                     }
@@ -1378,11 +1381,10 @@ impl<VatId> ConnectionState<VatId> {
 
     fn write_descriptor(
         state: &Rc<Self>,
-        cap: &Box<dyn ClientHook>,
+        mut inner: Box<dyn ClientHook>,
         mut descriptor: cap_descriptor::Builder,
     ) -> ::capnp::Result<Option<ExportId>> {
         // Find the innermost wrapped capability.
-        let mut inner = cap.clone();
         while let Some(resolved) = inner.get_resolved() {
             inner = resolved;
         }
@@ -1439,10 +1441,10 @@ impl<VatId> ConnectionState<VatId> {
         let mut exports = Vec::new();
         for (idx, value) in cap_table.iter().enumerate() {
             match value {
-                Some(ref cap) => {
+                Some(cap) => {
                     if let Some(export_id) = Self::write_descriptor(
                         state,
-                        cap,
+                        cap.clone(),
                         cap_table_builder.reborrow().get(idx as u32),
                     )
                     .unwrap()
@@ -1587,7 +1589,7 @@ impl<VatId> ConnectionState<VatId> {
 }
 
 enum DisconnectorState {
-    Connected,
+    New,
     Disconnecting,
     Disconnected,
 }
@@ -1603,13 +1605,9 @@ where
 
 impl<VatId> Disconnector<VatId> {
     pub fn new(connection_state: Rc<RefCell<Option<Rc<ConnectionState<VatId>>>>>) -> Self {
-        let state = match *(connection_state.borrow()) {
-            Some(_) => DisconnectorState::Connected,
-            None => DisconnectorState::Disconnected,
-        };
         Self {
             connection_state,
-            state,
+            state: DisconnectorState::New,
         }
     }
     fn disconnect(&self) {
@@ -1629,7 +1627,7 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         self.state = match self.state {
-            DisconnectorState::Connected => {
+            DisconnectorState::New => {
                 self.disconnect();
                 DisconnectorState::Disconnecting
             }
@@ -1643,9 +1641,9 @@ where
             DisconnectorState::Disconnected => DisconnectorState::Disconnected,
         };
         match self.state {
-            DisconnectorState::Connected => unreachable!(),
+            DisconnectorState::New => unreachable!(),
             DisconnectorState::Disconnecting => {
-                cx.waker().clone().wake();
+                cx.waker().wake_by_ref();
                 Poll::Pending
             }
             DisconnectorState::Disconnected => Poll::Ready(Ok(())),
@@ -1764,7 +1762,7 @@ where
         _size_hint: Option<::capnp::MessageSize>,
         target: Client<VatId>,
     ) -> ::capnp::Result<Self> {
-        let message = connection_state.new_outgoing_message(100)?;
+        let message = connection_state.new_outgoing_message(1024)?;
         Ok(Self {
             connection_state,
             target,
@@ -1967,8 +1965,7 @@ where
     VatId: 'static,
 {
     variant: PipelineVariant<VatId>,
-    redirect_later:
-        Option<RefCell<futures_util::future::Shared<Promise<Response<VatId>, ::capnp::Error>>>>,
+    redirect_later: Option<RefCell<futures_util::future::Shared<Promise<Response<VatId>, Error>>>>,
     connection_state: Rc<ConnectionState<VatId>>,
 
     #[allow(dead_code)]
@@ -2396,7 +2393,7 @@ impl ResultsDone {
                                 if let Ok(connection) =
                                     connection_state.connection.borrow_mut().as_mut()
                                 {
-                                    let mut message = connection.new_outgoing_message(50); // XXX size hint
+                                    let mut message = connection.new_outgoing_message(10);
                                     {
                                         let root: message::Builder =
                                             message.get_body()?.get_as()?;
@@ -2631,7 +2628,7 @@ impl<VatId> Drop for ImportClient<VatId> {
         // Send a message releasing our remote references.
         let mut tmp = connection_state.connection.borrow_mut();
         if let (true, Ok(c)) = (self.remote_ref_count > 0, tmp.as_mut()) {
-            let mut message = c.new_outgoing_message(50); // XXX size hint
+            let mut message = c.new_outgoing_message(10);
             {
                 let root: message::Builder = message.get_body().unwrap().init_as();
                 let mut release = root.init_release();
@@ -2973,7 +2970,7 @@ impl<VatId> Client<VatId> {
 
                 ConnectionState::write_descriptor(
                     &self.connection_state.clone(),
-                    &promise_client.borrow().cap.clone(),
+                    promise_client.borrow().cap.clone(),
                     descriptor,
                 )
                 .unwrap()

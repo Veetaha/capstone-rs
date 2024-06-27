@@ -90,7 +90,7 @@ mod tests {
         use std::cell::Cell;
         use std::rc::Rc;
 
-        let mut pool = tokio::task::LocalSet::new();
+        let pool = tokio::task::LocalSet::new();
 
         let (writer, reader) = async_byte_channel::channel();
         let (mut sender, write_queue) = capnp_futures::write_queue(writer);
@@ -166,6 +166,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::let_underscore_future)]
     fn static_lifetime_not_required_funcs() {
         let (mut write, mut read) = async_byte_channel::channel();
         let _ = serialize::try_read_message(&mut read, message::ReaderOptions::default());

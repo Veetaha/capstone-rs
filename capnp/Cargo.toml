@@ -2,7 +2,10 @@
 
 name = "capstone"
 version.workspace = true
-authors = ["David Renshaw <dwrenshaw@gmail.com>"]
+authors = [
+  "David Renshaw <dwrenshaw@gmail.com>",
+  "Erik McClure <erikm@fundament.software>",
+]
 license.workspace = true
 description = "runtime library for Cap'n Proto data encoding"
 repository.workspace = true
@@ -19,7 +22,7 @@ name = "capnp"
 [dependencies]
 quickcheck = { version = "1", optional = true }
 
-embedded-io = { version = "0.5.0", default-features = false, optional = true }
+embedded-io = { version = "0.6.1", default-features = false, optional = true }
 smallvec = "1.13.1"
 
 [dev-dependencies]
@@ -44,6 +47,9 @@ std = ["embedded-io?/std"]
 # message readers to be `Sync`. Note that AtomicUsize is not supported by all
 # rustc targets.
 sync_reader = []
+
+#[lints]
+#workspace = true
 
 [lints.clippy]
 type_complexity = "allow"    # this should be removed in future

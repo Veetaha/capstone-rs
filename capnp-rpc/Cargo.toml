@@ -22,3 +22,6 @@ capstone.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 futures-util.workspace = true
+
+[lints]
+workspace = true

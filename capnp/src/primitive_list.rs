@@ -112,20 +112,46 @@ impl<'a, T: PrimitiveElement> Reader<'a, T> {
         }
     }
 
-    #[cfg(target_endian = "little")]
-    /// Returns something if the slice is as expected in memory.
+    const _CHECK_SLICE: () = check_slice_supported::<T>();
+
+    /// Attempts to return a view of the list as a native Rust slice.
+    /// Returns `None` if the elements of the list are non-contiguous,
+    /// which can happen if the schema has evolved.
+    ///
+    /// This method raises a compile-time error if `T` is larger than one
+    /// byte and either the `unaligned` feature is enabled or the target
+    /// is big-endian.
     pub fn as_slice(&self) -> Option<&[T]> {
+        let () = Self::_CHECK_SLICE;
         if self.reader.get_element_size() == T::element_size() {
             let bytes = self.reader.into_raw_bytes();
-            Some(unsafe {
-                use core::slice;
-                slice::from_raw_parts(
-                    bytes.as_ptr() as *mut T,
-                    8 * bytes.len() / (data_bits_per_element(T::element_size())) as usize,
-                )
-            })
+            let bits_per_element = data_bits_per_element(T::element_size()) as usize;
+            let slice_length = if bits_per_element > 0 {
+                8 * bytes.len() / bits_per_element
+            } else {
+                // This is a List(Void).
+                self.len() as usize
+            };
+            if slice_length == 0 {
+                Some(&[])
+            } else {
+                Some(unsafe {
+                    core::slice::from_raw_parts(bytes.as_ptr() as *const T, slice_length)
+                })
+            }
         } else {
             None
+        }
+    }
+}
+
+const fn check_slice_supported<T: PrimitiveElement>() {
+    if core::mem::size_of::<T>() > 1 {
+        if !cfg!(target_endian = "little") {
+            panic!("cannot call as_slice on primitive list of multi-byte elements on non-little endian targets");
+        }
+        if cfg!(feature = "unaligned") {
+            panic!("cannot call as_slice on primitive list of multi-byte elements when unaligned feature is enabled");
         }
     }
 }
@@ -171,16 +197,33 @@ where
         PrimitiveElement::set(&self.builder, index, value);
     }
 
-    #[cfg(target_endian = "little")]
+    const _CHECK_SLICE: () = check_slice_supported::<T>();
+
+    /// Attempts to return a view of the list as a native Rust slice.
+    /// Returns `None` if the elements of the list are non-contiguous,
+    /// which can happen if the schema has evolved.
+    ///
+    /// This method raises a compile-time error if `T` is larger than one
+    /// byte and either the `unaligned` feature is enabled or the target
+    /// is big-endian.
     pub fn as_slice(&mut self) -> Option<&mut [T]> {
+        let () = Self::_CHECK_SLICE;
         if self.builder.get_element_size() == T::element_size() {
             let bytes = self.builder.as_raw_bytes();
-            Some(unsafe {
-                core::slice::from_raw_parts_mut(
-                    bytes.as_mut_ptr() as *mut T,
-                    8 * bytes.len() / (data_bits_per_element(T::element_size())) as usize,
-                )
-            })
+            let bits_per_element = data_bits_per_element(T::element_size()) as usize;
+            let slice_length = if bits_per_element > 0 {
+                8 * bytes.len() / bits_per_element
+            } else {
+                // This is a List(Void).
+                self.len() as usize
+            };
+            if slice_length == 0 {
+                Some(&mut [])
+            } else {
+                Some(unsafe {
+                    core::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, slice_length)
+                })
+            }
         } else {
             None
         }

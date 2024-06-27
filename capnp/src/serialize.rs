@@ -23,10 +23,6 @@
 //! [standard stream framing](https://capnproto.org/encoding.html#serialization-over-a-stream),
 //! where each message is preceded by a segment table indicating the size of its segments.
 
-mod no_alloc_buffer_segments;
-pub use no_alloc_buffer_segments::{NoAllocBufferSegments, NoAllocSliceSegments};
-
-#[cfg(feature = "alloc")]
 use crate::io::{Read, Write};
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -35,11 +31,14 @@ use core::convert::TryInto;
 #[cfg(feature = "alloc")]
 use core::ops::Deref;
 
+pub(crate) mod no_alloc_buffer_segments;
+pub use no_alloc_buffer_segments::{
+    NoAllocBufferSegments, NoAllocSegmentTableInfo, NoAllocSliceSegments,
+};
+
 use crate::message;
-#[cfg(feature = "alloc")]
 use crate::private::units::BYTES_PER_WORD;
 use crate::Result;
-#[cfg(feature = "alloc")]
 use crate::{Error, ErrorKind};
 
 pub const SEGMENTS_COUNT_LIMIT: usize = 512;
@@ -87,7 +86,7 @@ pub fn read_message_from_flat_slice<'a>(
 /// The slice is allowed to extend beyond the end of the message. On success, updates `slice` to point
 /// to the remaining bytes beyond the end of the message.
 ///
-/// Unlike read_message_from_flat_slice_no_alloc it does not do heap allocation
+/// Unlike read_message_from_flat_slice it does not do heap allocation
 ///
 /// ALIGNMENT: If the "unaligned" feature is enabled, then there are no alignment requirements on `slice`.
 /// Otherwise, `slice` must be 8-byte aligned (attempts to read the message will trigger errors).
@@ -101,7 +100,7 @@ pub fn read_message_from_flat_slice_no_alloc<'a>(
 }
 
 /// Segments read from a buffer, useful for when you have the message in a buffer and don't want the extra
-/// copy of `read_message`.
+/// copy performed by `read_message`.
 #[cfg(feature = "alloc")]
 pub struct BufferSegments<T> {
     buffer: T,
@@ -226,6 +225,20 @@ impl SegmentLengthsBuilder {
     }
 
     /// Pushes a new segment length. The `n`th time (starting at 0) this is called specifies the length of
+    /// the segment with ID `n`. If the segment overflows the total word count, then this returns
+    /// a MessageSizeOverflow error.
+    pub fn try_push_segment(&mut self, length_in_words: usize) -> Result<()> {
+        let new_total_words = self
+            .total_words
+            .checked_add(length_in_words)
+            .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+        self.segment_indices
+            .push((self.total_words, new_total_words));
+        self.total_words = new_total_words;
+        Ok(())
+    }
+
+    /// Pushes a new segment length. The `n`th time (starting at 0) this is called specifies the length of
     /// the segment with ID `n`.
     pub fn push_segment(&mut self, length_in_words: usize) {
         self.segment_indices
@@ -312,6 +325,119 @@ where
     )?))
 }
 
+/// Like `try_read_message()`, but does not allocate any memory.
+/// Stores the message in `buffer`. Returns a `BufferNotLargeEnough`
+/// error if the buffer is not large enough.
+/// ALIGNMENT: If the "unaligned" feature is enabled, then there are no alignment requirements on `buffer`.
+/// Otherwise, `buffer` must be 8-byte aligned (attempts to read the message will trigger errors).
+pub fn try_read_message_no_alloc<R>(
+    mut read: R,
+    buffer: &mut [u8],
+    options: message::ReaderOptions,
+) -> Result<Option<message::Reader<NoAllocBufferSegments<&[u8]>>>>
+where
+    R: Read,
+{
+    if !cfg!(feature = "unaligned") && buffer.as_ptr() as usize % BYTES_PER_WORD != 0 {
+        return Err(Error::from_kind(ErrorKind::UnalignedSegment));
+    }
+
+    if buffer.len() < 8 {
+        return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
+    }
+
+    // read the first Word, which contains segment_count and the 1st segment length
+    {
+        let n = read.read(&mut buffer[0..8])?;
+        if n == 0 {
+            // Clean EOF on message boundary
+            return Ok(None);
+        } else if n < 8 {
+            read.read_exact(&mut buffer[n..8])?;
+        }
+    }
+
+    let segment_count =
+        u32::from_le_bytes(buffer[0..4].try_into().unwrap()).wrapping_add(1) as usize;
+
+    if segment_count >= SEGMENTS_COUNT_LIMIT || segment_count == 0 {
+        return Err(Error::from_kind(ErrorKind::InvalidNumberOfSegments(
+            segment_count,
+        )));
+    }
+
+    let mut total_body_words: usize = u32::from_le_bytes(buffer[4..8].try_into().unwrap()) as usize;
+    let mut num_segment_counts_read = 1;
+    while num_segment_counts_read < segment_count {
+        let start = (num_segment_counts_read + 1) * 4;
+        let end = start + 8;
+        if buffer.len() < end {
+            return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
+        }
+
+        read.read(&mut buffer[start..end])?;
+
+        total_body_words = total_body_words
+            .checked_add(
+                u32::from_le_bytes(buffer[start..(start + 4)].try_into().unwrap()) as usize,
+            )
+            .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+
+        num_segment_counts_read += 1;
+        if num_segment_counts_read < segment_count {
+            total_body_words = total_body_words
+                .checked_add(
+                    u32::from_le_bytes(buffer[(start + 4)..end].try_into().unwrap()) as usize,
+                )
+                .ok_or_else(|| Error::from_kind(ErrorKind::MessageSizeOverflow))?;
+        }
+        num_segment_counts_read += 1;
+    }
+
+    if let Some(limit) = options.traversal_limit_in_words {
+        if total_body_words > limit {
+            return Err(Error::from_kind(ErrorKind::MessageTooLarge(
+                total_body_words,
+            )));
+        }
+    }
+
+    let start = (num_segment_counts_read + 1) * 4;
+    let end = start + (total_body_words * 8);
+    if buffer.len() < end {
+        return Err(Error::from_kind(ErrorKind::BufferNotLargeEnough));
+    }
+    read.read_exact(&mut buffer[start..end])?;
+
+    let info = no_alloc_buffer_segments::NoAllocSegmentTableInfo {
+        segments_count: segment_count,
+        segment_table_length_bytes: (num_segment_counts_read + 1) * 4,
+        total_segments_length_bytes: total_body_words * 8,
+    };
+
+    let segments = NoAllocSliceSegments::from_segment_table_info(buffer, info);
+    Ok(Some(crate::message::Reader::new(segments, options)))
+}
+
+/// Like `read_message()`, but does not allocate.
+/// Stores the message in `buffer`. Returns a `BufferNotLargeEnough`
+/// error if the buffer is not large enough.
+/// ALIGNMENT: If the "unaligned" feature is enabled, then there are no alignment requirements on `buffer`.
+/// Otherwise, `buffer` must be 8-byte aligned (attempts to read the message will trigger errors).
+pub fn read_message_no_alloc<R>(
+    read: R,
+    buffer: &mut [u8],
+    options: message::ReaderOptions,
+) -> Result<message::Reader<NoAllocBufferSegments<&[u8]>>>
+where
+    R: Read,
+{
+    match try_read_message_no_alloc(read, buffer, options)? {
+        Some(m) => Ok(m),
+        None => Err(Error::from_kind(ErrorKind::PrematureEndOfFile)),
+    }
+}
+
 /// Reads a segment table from `read` and returns the total number of words across all
 /// segments, as well as the segment offsets.
 ///
@@ -347,14 +473,14 @@ where
 
     let mut segment_lengths_builder = SegmentLengthsBuilder::with_capacity(segment_count);
     segment_lengths_builder
-        .push_segment(u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize);
+        .try_push_segment(u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize)?;
     if segment_count > 1 {
         if segment_count < 4 {
             read.read_exact(&mut buf)?;
             for idx in 0..(segment_count - 1) {
                 let segment_len =
                     u32::from_le_bytes(buf[(idx * 4)..(idx + 1) * 4].try_into().unwrap()) as usize;
-                segment_lengths_builder.push_segment(segment_len);
+                segment_lengths_builder.try_push_segment(segment_len)?;
             }
         } else {
             let mut segment_sizes = vec![0u8; (segment_count & !1) * 4];
@@ -363,7 +489,7 @@ where
                 let segment_len =
                     u32::from_le_bytes(segment_sizes[(idx * 4)..(idx + 1) * 4].try_into().unwrap())
                         as usize;
-                segment_lengths_builder.push_segment(segment_len);
+                segment_lengths_builder.try_push_segment(segment_len)?;
             }
         }
     }
@@ -440,7 +566,6 @@ fn flatten_segments<R: message::ReaderSegments + ?Sized>(segments: &R) -> Vec<u8
 ///
 /// The only source of errors from this function are `write.write_all()` calls. If you pass in
 /// a writer that never returns an error, then this function will never return an error.
-#[cfg(feature = "alloc")]
 pub fn write_message<W, A>(mut write: W, message: &message::Builder<A>) -> Result<()>
 where
     W: Write,
@@ -453,7 +578,6 @@ where
 
 /// Like `write_message()`, but takes a `ReaderSegments`, allowing it to be
 /// used on `message::Reader` objects (via `into_segments()`).
-#[cfg(feature = "alloc")]
 pub fn write_message_segments<W, R>(mut write: W, segments: &R) -> Result<()>
 where
     W: Write,
@@ -463,7 +587,6 @@ where
     write_segments(&mut write, segments)
 }
 
-#[cfg(feature = "alloc")]
 fn write_segment_table<W>(write: &mut W, segments: &[&[u8]]) -> Result<()>
 where
     W: Write,
@@ -474,7 +597,6 @@ where
 /// Writes a segment table to `write`.
 ///
 /// `segments` must contain at least one segment.
-#[cfg(feature = "alloc")]
 fn write_segment_table_internal<W, R>(write: &mut W, segments: &R) -> Result<()>
 where
     W: Write,
@@ -503,29 +625,38 @@ where
                     *b = 0
                 }
             }
+
             write.write_all(&buf)?;
         } else {
-            let mut buf = vec![0; (segment_count & !1) * 4];
-            for idx in 1..segment_count {
-                buf[(idx - 1) * 4..idx * 4].copy_from_slice(
-                    &((segments.get_segment(idx as u32).unwrap().len() / BYTES_PER_WORD) as u32)
-                        .to_le_bytes(),
-                );
-            }
-            if segment_count % 2 == 0 {
-                let start_idx = buf.len() - 4;
-                for b in &mut buf[start_idx..] {
-                    *b = 0
+            #[cfg(feature = "alloc")]
+            {
+                let mut buf = vec![0; (segment_count & !1) * 4];
+                for idx in 1..segment_count {
+                    buf[(idx - 1) * 4..idx * 4].copy_from_slice(
+                        &((segments.get_segment(idx as u32).unwrap().len() / BYTES_PER_WORD)
+                            as u32)
+                            .to_le_bytes(),
+                    );
                 }
+                if segment_count % 2 == 0 {
+                    let start_idx = buf.len() - 4;
+                    for b in &mut buf[start_idx..] {
+                        *b = 0
+                    }
+                }
+                write.write_all(&buf)?;
             }
-            write.write_all(&buf)?;
+
+            #[cfg(not(feature = "alloc"))]
+            {
+                unreachable!("multi-segment message builders are not supported in no-alloc mode")
+            }
         }
     }
     Ok(())
 }
 
 /// Writes segments to `write`.
-#[cfg(feature = "alloc")]
 fn write_segments<W, R: message::ReaderSegments + ?Sized>(write: &mut W, segments: &R) -> Result<()>
 where
     W: Write,
@@ -540,7 +671,6 @@ where
     Ok(())
 }
 
-#[cfg(feature = "alloc")]
 fn compute_serialized_size<R: message::ReaderSegments + ?Sized>(segments: &R) -> usize {
     // Table size
     let len = segments.len();
@@ -557,7 +687,6 @@ fn compute_serialized_size<R: message::ReaderSegments + ?Sized>(segments: &R) ->
 ///
 /// Multiply this by 8 (or `std::mem::size_of::<capnp::Word>()`) to get the number of bytes
 /// that [`write_message()`](fn.write_message.html) will write.
-#[cfg(feature = "alloc")]
 pub fn compute_serialized_size_in_words<A>(message: &crate::message::Builder<A>) -> usize
 where
     A: crate::message::Allocator,
@@ -762,6 +891,17 @@ pub mod test {
     }
 
     #[test]
+    fn test_read_segment_table_overflow() {
+        let mut buf = vec![];
+
+        buf.extend([1, 0, 0, 0]); // 2 segments
+        buf.extend([0xff, 0xff, 0xff, 0xff]); // 2^32 - 1 words
+        buf.extend([2, 0, 0, 0]); // 2 words
+        buf.extend([0, 0, 0, 0]); // padding
+        assert!(read_segment_table(&mut &buf[..], message::ReaderOptions::new()).is_err());
+    }
+
+    #[test]
     fn test_write_segment_table() {
         let mut buf = vec![];
 
@@ -858,7 +998,7 @@ pub mod test {
         #[cfg_attr(miri, ignore)] // miri takes a long time with quickcheck
         fn test_round_trip(segments: Vec<Vec<crate::Word>>) -> TestResult {
             if segments.is_empty() { return TestResult::discard(); }
-            let mut buf: Vec<u8> = Vec::new();
+            let mut buf: Vec<u8> = vec![];
 
             write_message_segments(&mut buf, &segments);
             let message = read_message(&mut &buf[..], message::ReaderOptions::new()).unwrap();
