@@ -19,7 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-//! An implementation of `VatNetwork` for the common case of a client-server connection.
+//! An implementation of [`VatNetwork`](crate::VatNetwork) for the common case
+//! of a client-server connection.
 
 use capnp::capability::Promise;
 use capnp::message::ReaderOptions;
@@ -149,10 +150,13 @@ where
 
     fn new_outgoing_message(
         &mut self,
-        _first_segment_word_size: u32,
+        first_segment_word_size: u32,
     ) -> Box<dyn crate::OutgoingMessage> {
+        let message = ::capnp::message::Builder::new(
+            ::capnp::message::HeapAllocator::new().first_segment_words(first_segment_word_size),
+        );
         Box::new(OutgoingMessage {
-            message: ::capnp::message::Builder::new_default(),
+            message,
             sender: self.inner.borrow().sender.clone(),
         })
     }
@@ -206,12 +210,14 @@ where
     side: crate::rpc_twoparty_capnp::Side,
 }
 
+/// A two-party vat `VatNetwork` implementation.
 impl<T> VatNetwork<T>
 where
     T: AsyncRead + Unpin,
 {
     /// Creates a new two-party vat network that will receive data on `input_stream` and send data on
-    /// `output_stream`.
+    /// `output_stream`. (Typically, performance is best if these streams are buffered, possibly via
+    /// `futures::io::BufReader` and `futures::io::BufWriter`.)
     ///
     /// `side` indicates whether this is the client or the server side of the connection. This has no
     /// effect on the data sent over the connection; it merely exists so that `RpcNetwork::bootstrap` knows

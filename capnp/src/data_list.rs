@@ -61,6 +61,12 @@ impl<'a> Reader<'a> {
         let l = self.len();
         ListIter::new(self, l)
     }
+
+    pub fn reborrow(&self) -> Reader {
+        Reader {
+            reader: self.reader,
+        }
+    }
 }
 
 impl<'a> FromPointerReader<'a> for Reader<'a> {
@@ -214,5 +220,14 @@ impl<'a> From<Builder<'a>> for crate::dynamic_value::Builder<'a> {
             builder: t.builder,
             element_type: crate::introspect::TypeVariant::Data.into(),
         })
+    }
+}
+
+impl<'a> core::fmt::Debug for Reader<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(
+            &::core::convert::Into::<crate::dynamic_value::Reader<'_>>::into(*self),
+            f,
+        )
     }
 }

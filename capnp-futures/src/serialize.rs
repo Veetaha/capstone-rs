@@ -64,6 +64,7 @@ where
     ))
 }
 
+#[inline(never)]
 async fn read_segment_table<R>(
     mut reader: R,
     options: message::ReaderOptions,
@@ -83,7 +84,7 @@ where
     let (segment_count, first_segment_length) = parse_segment_table_first(&buf[..])?;
 
     let mut segment_lengths_builder = SegmentLengthsBuilder::with_capacity(segment_count);
-    segment_lengths_builder.push_segment(first_segment_length);
+    segment_lengths_builder.try_push_segment(first_segment_length)?;
     if segment_count > 1 {
         if segment_count < 4 {
             // small enough that we can reuse our existing buffer
@@ -91,7 +92,7 @@ where
             for idx in 0..(segment_count - 1) {
                 let segment_len =
                     u32::from_le_bytes(buf[(idx * 4)..(idx + 1) * 4].try_into().unwrap()) as usize;
-                segment_lengths_builder.push_segment(segment_len);
+                segment_lengths_builder.try_push_segment(segment_len)?;
             }
         } else {
             let mut segment_sizes = vec![0u8; (segment_count & !1) * 4];
@@ -100,7 +101,7 @@ where
                 let segment_len =
                     u32::from_le_bytes(segment_sizes[(idx * 4)..(idx + 1) * 4].try_into().unwrap())
                         as usize;
-                segment_lengths_builder.push_segment(segment_len);
+                segment_lengths_builder.try_push_segment(segment_len)?;
             }
         }
     }
@@ -574,7 +575,7 @@ pub mod test {
         ) -> Poll<io::Result<()>> {
             if self.idx == 0 {
                 self.idx = self.blocking_period;
-                cx.waker().clone().wake();
+                cx.waker().wake_by_ref();
                 Poll::Pending
             } else {
                 let len = cmp::min(self.idx, buf.remaining());
@@ -631,7 +632,7 @@ pub mod test {
         ) -> Poll<io::Result<usize>> {
             if self.idx == 0 {
                 self.idx = self.blocking_period;
-                cx.waker().clone().wake();
+                cx.waker().wake_by_ref();
                 Poll::Pending
             } else {
                 let len = cmp::min(self.idx, buf.len());

@@ -196,7 +196,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Returns `false` if the field is a pointer and the pointer is null.
+    /// On a field that is part of a union, returns `true` if the field
+    /// is active in the union and is not a null pointer. On non-union fields,
+    /// returns `true` if the field is not a null pointer.
     pub fn has(&self, field: Field) -> Result<bool> {
         assert_eq!(self.schema.raw, field.parent.raw);
         let proto = field.get_proto();
@@ -815,5 +817,14 @@ impl<'a> crate::traits::SetPointerBuilder for Reader<'a> {
         canonicalize: bool,
     ) -> Result<()> {
         pointer.set_struct(&value.reader, canonicalize)
+    }
+}
+
+impl<'a> core::fmt::Debug for Reader<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(
+            &::core::convert::Into::<crate::dynamic_value::Reader<'_>>::into(*self),
+            f,
+        )
     }
 }

@@ -97,6 +97,7 @@ fn commandhandle() -> eyre::Result<tempfile::TempDir> {{
         .write(true)
         .mode(0o770)
         .create(true)
+        .truncate(true)
         .open(tempdir.path().join(\"capnp\"))?;
 
     #[cfg(target_os = \"windows\")]

@@ -134,6 +134,7 @@ fn append_path(file_path: &Path) -> Result<TokenStream2> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn basic_file_test() -> Result<()> {
@@ -158,27 +159,33 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn search_test() -> Result<()> {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?.join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         let contents = process_inner(["/folder-test/*.capnp"])?;
+        std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
     }
 
     #[should_panic]
+    #[serial]
     #[test]
-    fn search_fail2_test() -> () {
+    fn search_fail2_test() {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .unwrap()
             .join("tests");
         std::env::set_var("DEP_TEST_WRONG_DIR", folder.as_os_str());
         // Should fail because DEP_TEST_WRONG_DIR is in the wrong format
-        let _ = process_inner(["/folder-test/*.capnp"]).unwrap();
+        let contents = process_inner(["/folder-test/*.capnp"]);
+        std::env::remove_var("DEP_TEST_WRONG_DIR");
+        contents.unwrap();
     }
 
     #[should_panic]
+    #[serial]
     #[test]
     fn search_failure_test() {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
@@ -186,8 +193,8 @@ mod tests {
             .join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the path doesn't start with '/'
-        let contents = process_inner(["folder-test/*.capnp"]).unwrap();
-        let tests_module: syn::ItemMod = syn::parse2(contents).unwrap();
-        assert_eq!(tests_module.ident, "foo_capnp");
+        let contents = process_inner(["folder-test/*.capnp"]);
+        std::env::remove_var("DEP_TEST_SCHEMA_DIR");
+        contents.unwrap();
     }
 }

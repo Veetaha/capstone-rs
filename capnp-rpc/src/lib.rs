@@ -75,11 +75,11 @@ use crate::task_set::TaskSet;
 pub use crate::reconnect::{auto_reconnect, lazy_auto_reconnect, SetTarget};
 
 /// Code generated from
-/// [rpc.capnp](https://github.com/sandstorm-io/capnproto/blob/master/c%2B%2B/src/capnp/rpc.capnp).
+/// [rpc.capnp](https://github.com/capnproto/capnproto/blob/master/c%2B%2B/src/capnp/rpc.capnp).
 pub mod rpc_capnp;
 
 /// Code generated from
-/// [rpc-twoparty.capnp](https://github.com/sandstorm-io/capnproto/blob/master/c%2B%2B/src/capnp/rpc-twoparty.capnp).
+/// [rpc-twoparty.capnp](https://github.com/capnproto/capnproto/blob/master/c%2B%2B/src/capnp/rpc-twoparty.capnp).
 pub mod rpc_twoparty_capnp;
 
 /// Like `try!()`, but for functions that return a `Promise<T, E>` rather than a `Result<T, E>`.
@@ -109,8 +109,17 @@ mod split;
 mod task_set;
 pub mod twoparty;
 
+use capnp::message;
+
+/// A message to be sent by a [`VatNetwork`].
 pub trait OutgoingMessage {
+    /// Gets the message body, which the caller may fill in any way it wants.
+    ///
+    /// The standard RPC implementation initializes it as a Message as defined
+    /// in `schema/rpc.capnp`.
     fn get_body(&mut self) -> ::capnp::Result<::capnp::any_pointer::Builder>;
+
+    /// Same as `get_body()`, but returns the corresponding reader type.
     fn get_body_as_reader(&self) -> ::capnp::Result<::capnp::any_pointer::Reader>;
 
     /// Sends the message. Returns a promise for the message that resolves once the send has completed.
@@ -118,30 +127,56 @@ pub trait OutgoingMessage {
     fn send(
         self: Box<Self>,
     ) -> (
-        Promise<Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>, ::capnp::Error>,
-        Rc<::capnp::message::Builder<::capnp::message::HeapAllocator>>,
+        Promise<Rc<message::Builder<message::HeapAllocator>>, ::capnp::Error>,
+        Rc<message::Builder<message::HeapAllocator>>,
     );
 
-    fn take(self: Box<Self>) -> ::capnp::message::Builder<::capnp::message::HeapAllocator>;
+    /// Takes the inner message out of `self`.
+    fn take(self: Box<Self>) -> message::Builder<message::HeapAllocator>;
 }
 
+/// A message received from a [`VatNetwork`].
 pub trait IncomingMessage {
+    /// Gets the message body, to be interpreted by the caller.
+    ///
+    /// The standard RPC implementation interprets it as a Message as defined
+    /// in `schema/rpc.capnp`.
     fn get_body(&self) -> ::capnp::Result<::capnp::any_pointer::Reader>;
 }
 
+/// A two-way RPC connection.
+///
+/// A connection can be created by [`VatNetwork::connect()`].
 pub trait Connection<VatId> {
+    /// Returns the connected vat's authenticated VatId.  It is the VatNetwork's
+    /// responsibility to authenticate this, so that the caller can be assured
+    /// that they are really talking to the identified vat and not an imposter.
     fn get_peer_vat_id(&self) -> VatId;
+
+    /// Allocates a new message to be sent on this connection.
+    ///
+    /// If `first_segment_word_size` is non-zero, it should be treated as a
+    /// hint suggesting how large to make the first segment.  This is entirely
+    /// a hint and the connection may adjust it up or down.  If it is zero,
+    /// the connection should choose the size itself.
     fn new_outgoing_message(&mut self, first_segment_word_size: u32) -> Box<dyn OutgoingMessage>;
 
     /// Waits for a message to be received and returns it.  If the read stream cleanly terminates,
     /// returns None. If any other problem occurs, returns an Error.
     fn receive_incoming_message(&mut self) -> Promise<Option<Box<dyn IncomingMessage>>, Error>;
 
-    // Waits until all outgoing messages have been sent, then shuts down the outgoing stream. The
-    // returned promise resolves after shutdown is complete.
+    /// Waits until all outgoing messages have been sent, then shuts down the outgoing stream. The
+    /// returned promise resolves after shutdown is complete.
     fn shutdown(&mut self, result: ::capnp::Result<()>) -> Promise<(), Error>;
 }
 
+/// Network facility between vats, it determines how to form connections between
+/// vats.
+///
+/// ## Vat
+///
+/// Cap'n Proto RPC operates between vats, where a "vat" is some sort of host of
+/// objects.  Typically one Cap'n Proto process (in the Unix sense) is one vat.
 pub trait VatNetwork<VatId> {
     /// Returns None if `hostId` refers to the local vat.
     fn connect(&mut self, host_id: VatId) -> Option<Box<dyn Connection<VatId>>>;
@@ -154,7 +189,7 @@ pub trait VatNetwork<VatId> {
 
 /// A portal to objects available on the network.
 ///
-/// The RPC implemententation sits on top of an implementation of `VatNetwork`, which
+/// The RPC implementation sits on top of an implementation of `VatNetwork`, which
 /// determines how to form connections between vats. The RPC implementation determines
 /// how to use such connections to manage object references and make method calls.
 ///
@@ -163,8 +198,9 @@ pub trait VatNetwork<VatId> {
 /// will need to have more sophisticated `VatNetwork` implementations, in order to support
 /// [level 3](https://capnproto.org/rpc.html#protocol-features) features.
 ///
-/// An `RpcSystem` is a `Future` and needs to be driven by a task executor. A common way
-/// accomplish that is to pass the `RpcSystem` to `tokio_core::reactor::Handle::spawn()`.
+/// An `RpcSystem` is a non-`Send`able `Future` and needs to be driven by a task
+/// executor. A common way accomplish that is to pass the `RpcSystem` to
+/// `tokio::task::spawn_local()`.
 #[must_use = "futures do nothing unless polled"]
 pub struct RpcSystem<VatId>
 where
@@ -226,7 +262,8 @@ impl<VatId> RpcSystem<VatId> {
         result
     }
 
-    /// Connects to the given vat and returns its bootstrap interface.
+    /// Connects to the given vat and returns its bootstrap interface, returns
+    /// a client that can be used to invoke the bootstrap interface.
     pub fn bootstrap<T>(&mut self, vat_id: VatId) -> T
     where
         T: ::capnp::capability::FromClientHook,
@@ -423,19 +460,19 @@ impl crate::task_set::TaskReaper<Error> for SystemTaskReaper {
 
 pub struct ImbuedMessageBuilder<A>
 where
-    A: ::capnp::message::Allocator,
+    A: message::Allocator,
 {
-    builder: ::capnp::message::Builder<A>,
+    builder: message::Builder<A>,
     cap_table: Vec<Option<Box<dyn (::capnp::private::capability::ClientHook)>>>,
 }
 
 impl<A> ImbuedMessageBuilder<A>
 where
-    A: ::capnp::message::Allocator,
+    A: message::Allocator,
 {
     pub fn new(allocator: A) -> Self {
         Self {
-            builder: ::capnp::message::Builder::new(allocator),
+            builder: message::Builder::new(allocator),
             cap_table: Vec::new(),
         }
     }
