@@ -302,9 +302,11 @@ async fn basic_rpc_calls() {
         let response = client.test_interface_request().send().promise.await?;
         let client = response.get()?.get_cap()?;
 
-        let mut request1 = client.foo_request();
-        request1.get().set_i(123);
-        request1.get().set_j(true);
+        //let mut request1 = client.foo_request();
+        //request1.get().set_i(123);
+        //request1.get().set_j(true);
+        let request1 = client.build_foo_request(123, true);
+
         let promise1 = request1.send();
 
         let request3 = client.bar_request();
@@ -340,11 +342,12 @@ async fn basic_pipelining() {
         let response = client.test_pipeline_request().send().promise.await?;
         let client = response.get()?.get_cap()?;
 
-        let mut request = client.get_cap_request();
-        request.get().set_n(234);
+        //let mut request = client.get_cap_request();
+        //request.get().set_n(234);
         let server = impls::TestInterface::new();
         let chained_call_count = server.get_call_count();
-        request.get().set_in_cap(capnp_rpc::new_client(server));
+        //request.get().set_in_cap(capnp_rpc::new_client(server));
+        let mut request = client.build_get_cap_request(234, capnp_rpc::new_client(server));
 
         let promise = request.send();
 

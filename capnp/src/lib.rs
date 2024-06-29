@@ -564,6 +564,32 @@ impl core::convert::From<NotInSchema> for Error {
         Self::from_kind(ErrorKind::EnumValueOrUnionDiscriminantNotPresent(e))
     }
 }
+//TODO maybe needs to be more specific, but potentially would reveal information that should stay private
+impl core::convert::From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        match value {
+            rusqlite::Error::SqliteFailure(_, _) => Self::failed(format!("Error from underlying sqlite call")),
+            rusqlite::Error::SqliteSingleThreadedMode => Self::failed(format!("Attempting to open multiple connection when sqlite is in single threaded mode")),
+            rusqlite::Error::FromSqlConversionFailure(_, _, _) => Self::failed(format!("Error converting sql type to rust type")),
+            rusqlite::Error::IntegralValueOutOfRange(_, _) => Self::failed(format!("Integral value out of range")),
+            rusqlite::Error::Utf8Error(e) => Self::from_kind(ErrorKind::TextContainsNonUtf8Data(e)),
+            rusqlite::Error::NulError(_) => Self::failed(format!("Error converting string to c-compatible strting, because it contains an embeded null")),
+            rusqlite::Error::InvalidParameterName(_) => Self::failed(format!("Invalid parameter name")),
+            rusqlite::Error::InvalidPath(_) => Self::failed(format!("Invalid path")),
+            rusqlite::Error::ExecuteReturnedResults =>  Self::failed(format!("Execute call returned rows")),
+            rusqlite::Error::QueryReturnedNoRows => Self::failed(format!("Query that was expected to return rows returned no rows")),
+            rusqlite::Error::InvalidColumnIndex(_) =>  Self::failed(format!("Invalid column index")),
+            rusqlite::Error::InvalidColumnName(_) => Self::failed(format!("Invalid column name")),
+            rusqlite::Error::InvalidColumnType(_, _, _) => Self::failed(format!("Invalid column type")),
+            rusqlite::Error::StatementChangedRows(_) => Self::failed(format!("Query changed more/less rows than expected")),
+            rusqlite::Error::ToSqlConversionFailure(_) => todo!(),
+            rusqlite::Error::InvalidQuery => Self::failed(format!("Invalid query")),
+            rusqlite::Error::MultipleStatement => Self::failed(format!("Sql contains multiple statements")),
+            rusqlite::Error::InvalidParameterCount(_, _) => Self::failed(format!("Invalid parameter count")),
+            _ => Self::failed(format!("Sqlite error")),
+        }
+    }
+}
 
 impl core::fmt::Display for ErrorKind {
     fn fmt(&self, fmt: &mut core::fmt::Formatter) -> core::result::Result<(), core::fmt::Error> {
