@@ -565,6 +565,7 @@ impl core::convert::From<NotInSchema> for Error {
     }
 }
 //TODO maybe needs to be more specific, but potentially would reveal information that should stay private
+#[cfg(feature = "alloc")]
 impl core::convert::From<rusqlite::Error> for Error {
     fn from(value: rusqlite::Error) -> Self {
         match value {
