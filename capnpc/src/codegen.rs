@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use capnp;
-use capnp::schema_capnp;
+use capnp::schema_capnp::{self, type_};
 use capnp::Error;
 
 use self::FormattedText::{BlankLine, Branch, Indent, Line};
@@ -141,7 +141,7 @@ impl CodeGenerationCommand {
                 line("// DO NOT EDIT."),
                 Line(format!("// source: {}", requested_file.get_filename()?.to_str()?)),
                 BlankLine,
-                generate_node(&ctx, id, &root_name)?,
+                generate_node(&ctx, id, &root_name, &mut String::new(), &mut String::new(), false)?,
             ]);
 
             let text = stringify(&lines);
@@ -396,6 +396,22 @@ fn snake_to_upper_case(s: &str) -> String {
             result_chars.push('_');
         } else {
             result_chars.push(c.to_ascii_uppercase());
+        }
+    }
+    result_chars.into_iter().collect()
+}
+
+fn snake_to_camel_case(s: &str) -> String {
+    let mut result_chars: Vec<char> = Vec::new();
+    let mut capitalize = true;
+    for c in s.chars() {
+        if capitalize {
+            result_chars.push(c.to_ascii_uppercase());
+            capitalize = false;
+        } else if c == '_' {
+            capitalize = true;
+        } else {
+            result_chars.push(c);
         }
     }
     result_chars.into_iter().collect()
@@ -992,18 +1008,27 @@ fn generate_setter(
     discriminant_offset: u32,
     styled_name: &str,
     field: &schema_capnp::field::Reader,
+    rust_struct_inner: &mut String,
+    rust_struct_impl_inner: &mut String,
+    is_params_struct: bool,
+    //params_struct_params: &mut HashSet<String>, //TODO Still thinking about generics
+    node_name: &str,
 ) -> ::capnp::Result<FormattedText> {
     use capnp::schema_capnp::*;
 
+    let params_struct_prefix = if is_params_struct { " " } else { "\n pub " };
+    let params_struct_impl_prefix = if is_params_struct { "" } else { "self." };
     let mut setter_interior = Vec::new();
     let mut setter_param = "value".to_string();
     let mut initter_interior = Vec::new();
     let mut initter_mut = false;
     let mut initn_interior = Vec::new();
     let mut initter_params = Vec::new();
+    let mut no_discriminant = true;
 
     let discriminant_value = field.get_discriminant_value();
     if discriminant_value != field::NO_DISCRIMINANT {
+        no_discriminant = false;
         setter_interior.push(Line(format!(
             "self.builder.set_data_field::<u16>({}, {});",
             discriminant_offset as usize, discriminant_value as usize
@@ -1023,14 +1048,24 @@ fn generate_setter(
         .which()?
     {
         field::Group(group) => {
+            let the_mod = ctx.get_qualified_module(group.get_type_id());
             let params = get_params(ctx, group.get_type_id())?;
             let params_string = if params.is_empty() {
+                if no_discriminant {
+                    rust_struct_inner.push_str(
+                        format!(
+                            "{params_struct_prefix}_{styled_name}: {}::{},",
+                            the_mod,
+                            snake_to_camel_case(ctx.get_last_name(group.get_type_id())?)
+                        )
+                        .as_str(),
+                    );
+                    rust_struct_impl_inner.push_str(format!("\n  {params_struct_impl_prefix}_{styled_name}.build_capnp_struct(builder.reborrow().init_{styled_name}());").as_str());
+                }
                 "".to_string()
             } else {
                 format!(",{}", params.join(","))
             };
-
-            let the_mod = ctx.get_qualified_module(group.get_type_id());
 
             initter_interior.push(zero_fields_of_group(
                 ctx,
@@ -1048,6 +1083,12 @@ fn generate_setter(
             match typ.which().expect("unrecognized type") {
                 type_::Void(()) => {
                     setter_param = "_value".to_string();
+                    if no_discriminant {
+                        rust_struct_inner.push_str(
+                            format!("{params_struct_prefix}_{styled_name}: (),").as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                    }
                     (Some("()".to_string()), None)
                 }
                 type_::Bool(()) => {
@@ -1062,6 +1103,12 @@ fn generate_setter(
                                 "self.builder.set_bool_field_mask({offset}, value, {s});"
                             )));
                         }
+                    }
+                    if no_discriminant {
+                        rust_struct_inner.push_str(
+                            format!("{params_struct_prefix}_{styled_name}: bool,").as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
                     }
                     (Some("bool".to_string()), None)
                 }
@@ -1079,6 +1126,12 @@ fn generate_setter(
                             )));
                         }
                     };
+                    if no_discriminant {
+                        rust_struct_inner.push_str(
+                            format!("{params_struct_prefix}_{styled_name}: {tstr},").as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                    }
                     (Some(tstr), None)
                 }
                 type_::Text(()) => {
@@ -1089,6 +1142,12 @@ fn generate_setter(
                         "self.builder.get_pointer_field({offset}).init_text(size)"
                     )));
                     initter_params.push("size: u32");
+                    if no_discriminant {
+                        rust_struct_inner.push_str(
+                            format!("{params_struct_prefix}_{styled_name}: String,").as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name}.as_str().into());").as_str());
+                    }
                     (
                         Some(fmt!(ctx, "{capnp}::text::Reader<'_>")),
                         Some(fmt!(ctx, "{capnp}::text::Builder<'a>")),
@@ -1102,6 +1161,12 @@ fn generate_setter(
                         "self.builder.get_pointer_field({offset}).init_data(size)"
                     )));
                     initter_params.push("size: u32");
+                    if no_discriminant {
+                        rust_struct_inner.push_str(
+                            format!("{params_struct_prefix}_{styled_name}: Vec<u8>,").as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name}.as_slice().into());").as_str());
+                    }
                     (
                         Some(fmt!(ctx, "{capnp}::data::Reader<'_>")),
                         Some(fmt!(ctx, "{capnp}::data::Builder<'a>")),
@@ -1115,6 +1180,29 @@ fn generate_setter(
                     initter_params.push("size: u32");
                     initter_interior.push(
                         Line(fmt!(ctx,"{capnp}::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field({offset}), size)")));
+
+                    if no_discriminant {
+                        if let Ok(vec_of_list_element_types) =
+                            vec_of_list_element_types(ctx, ot1.reborrow())
+                        {
+                            rust_struct_inner.push_str(
+                                format!(
+                                    "{params_struct_prefix}_{styled_name}: {},",
+                                    vec_of_list_element_types
+                                )
+                                .as_str(),
+                            );
+                            rust_struct_impl_inner.push_str(
+                                build_impl_for_list_type(
+                                    styled_name,
+                                    ot1.reborrow(),
+                                    false,
+                                    is_params_struct,
+                                )?
+                                .as_str(),
+                            );
+                        }
+                    }
 
                     match ot1.get_element_type()?.which()? {
                         type_::List(_) => (
@@ -1138,6 +1226,12 @@ fn generate_setter(
                 type_::Enum(e) => {
                     let id = e.get_type_id();
                     let the_mod = ctx.get_qualified_module(id);
+                    if no_discriminant && get_params(ctx, e.get_type_id())?.is_empty() {
+                        rust_struct_inner.push_str(
+                            format!("{params_struct_prefix}_{styled_name}: {the_mod},").as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                    }
                     if !reg_field.get_had_explicit_default() {
                         setter_interior.push(Line(format!(
                             "self.builder.set_data_field::<u16>({offset}, value as u16);"
@@ -1154,10 +1248,37 @@ fn generate_setter(
                     };
                     (Some(the_mod), None)
                 }
-                type_::Struct(_) => {
+                type_::Struct(st) => {
                     return_result = true;
                     initter_interior.push(
                       Line(fmt!(ctx,"{capnp}::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field({offset}), 0)")));
+
+                    let type_string = get_params_struct_path_string(ctx, st)?;
+                    if no_discriminant && get_params(ctx, st.get_type_id())?.is_empty() {
+                        if type_string
+                            .rfind(snake_to_camel_case(node_name).as_str())
+                            .is_some()
+                        {
+                            rust_struct_inner.push_str(
+                                format!(
+                                    "{params_struct_prefix}_{styled_name}: Option<Box<{}>>,",
+                                    type_string
+                                )
+                                .as_str(),
+                            );
+                            rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(builder.reborrow().init_{styled_name}());}}").as_str());
+                        } else {
+                            rust_struct_inner.push_str(
+                                format!(
+                                    "{params_struct_prefix}_{styled_name}: Option<{}>,",
+                                    type_string
+                                )
+                                .as_str(),
+                            );
+                            rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(builder.reborrow().init_{styled_name}());}}").as_str());
+                        }
+                    }
+
                     if typ.is_branded()? {
                         setter_interior.push(
                             Line(fmt!(ctx,
@@ -1181,7 +1302,17 @@ fn generate_setter(
                         )
                     }
                 }
-                type_::Interface(_) => {
+                type_::Interface(i_t) => {
+                    if no_discriminant && get_params(ctx, i_t.get_type_id())?.is_empty() {
+                        rust_struct_inner.push_str(
+                            format!(
+                                "{params_struct_prefix}_{styled_name}: {},",
+                                typ.type_string(ctx, Leaf::Client)?
+                            )
+                            .as_str(),
+                        );
+                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                    }
                     setter_interior.push(Line(format!(
                         "self.builder.reborrow().get_pointer_field({offset}).set_capability(value.client.hook);"
                     )));
@@ -1189,6 +1320,10 @@ fn generate_setter(
                 }
                 type_::AnyPointer(_) => {
                     if typ.is_parameter()? {
+                        //let reader_type = typ.type_string(ctx, Leaf::Reader("'a"))?;
+                        //params_struct_string.push_str(format!("\n   pub {styled_name}: {reader_type},").as_str());
+                        //params_struct_impl_string.push_str(format!("\n  builder.set_{styled_name}(self.{styled_name});").as_str());
+
                         initter_interior.push(Line(fmt!(ctx,"{capnp}::any_pointer::Builder::new(self.builder.get_pointer_field({offset})).init_as()")));
                         setter_interior.push(Line(fmt!(ctx,"{capnp}::traits::SetPointerBuilder::set_pointer_builder(self.builder.reborrow().get_pointer_field({offset}), value, false)")));
                         return_result = true;
@@ -1210,6 +1345,11 @@ fn generate_setter(
                             Some(builder_type),
                         )
                     } else {
+                        //TODO implement for anypointers besides caps
+                        if no_discriminant {
+                            rust_struct_inner.push_str(fmt!(ctx, "{params_struct_prefix}_{styled_name}: Box<dyn {capnp}::private::capability::ClientHook>,").as_str());
+                            rust_struct_impl_inner.push_str(format!("\n  builder.reborrow().init_{styled_name}().set_as_capability({params_struct_impl_prefix}_{styled_name});").as_str());
+                        }
                         initter_interior.push(Line(fmt!(ctx,"let mut result = {capnp}::any_pointer::Builder::new(self.builder.get_pointer_field({offset}));")));
                         initter_interior.push(line("result.clear();"));
                         initter_interior.push(line("result"));
@@ -1245,7 +1385,175 @@ fn generate_setter(
     }
     Ok(Branch(result))
 }
-
+fn get_params_struct_path_string(
+    ctx: &GeneratorContext,
+    struct_reader: capnp::schema_capnp::type_::struct_::Reader,
+) -> capnp::Result<String> {
+    Ok(format!(
+        "{}::{}",
+        ctx.get_qualified_module(struct_reader.get_type_id()),
+        snake_to_camel_case(ctx.get_last_name(struct_reader.get_type_id())?)
+    ))
+}
+fn vec_of_list_element_types(
+    ctx: &GeneratorContext,
+    list: type_::list::Reader,
+) -> capnp::Result<String> {
+    match list.get_element_type()?.which()? {
+        type_::Which::Void(()) => Ok("Vec<()>".to_string()),
+        type_::Which::Bool(()) => Ok("Vec<bool>".to_string()),
+        type_::Which::Int8(()) => Ok("Vec<i8>".to_string()),
+        type_::Which::Int16(()) => Ok("Vec<i16>".to_string()),
+        type_::Which::Int32(()) => Ok("Vec<i32>".to_string()),
+        type_::Which::Int64(()) => Ok("Vec<i64>".to_string()),
+        type_::Which::Uint8(()) => Ok("Vec<u8>".to_string()),
+        type_::Which::Uint16(()) => Ok("Vec<u16>".to_string()),
+        type_::Which::Uint32(()) => Ok("Vec<u32>".to_string()),
+        type_::Which::Uint64(()) => Ok("Vec<u64>".to_string()),
+        type_::Which::Float32(()) => Ok("Vec<f32>".to_string()),
+        type_::Which::Float64(()) => Ok("Vec<f64>".to_string()),
+        type_::Which::Text(_) => Ok("Vec<String>".to_string()),
+        type_::Which::Data(_) => Ok("Vec<Vec<u8>>".to_string()),
+        type_::Which::List(l) => Ok(format!("Vec<{}>", vec_of_list_element_types(ctx, l)?)),
+        type_::Which::Enum(enum_type) => {
+            if get_params(ctx, enum_type.get_type_id())?.is_empty() {
+                let enum_mod = ctx.get_qualified_module(enum_type.get_type_id());
+                return Ok(format!("Vec<{enum_mod}>"));
+            }
+            Err(Error::failed("generics not supported here yet".to_string()))
+        }
+        type_::Which::Struct(struct_reader) => {
+            if get_params(ctx, struct_reader.get_type_id())?.is_empty() {
+                return Ok(format!(
+                    "Vec<{}>",
+                    get_params_struct_path_string(ctx, struct_reader)?
+                ));
+            }
+            Err(Error::failed("generics not supported here yet".to_string()))
+        }
+        type_::Which::Interface(i_t) => {
+            if get_params(ctx, i_t.get_type_id())?.is_empty() {
+                let the_mod = ctx.get_qualified_module(i_t.get_type_id());
+                return Ok(format!("Vec<{the_mod}::Client>"));
+            }
+            Err(Error::failed("generics not supported here yet".to_string()))
+        }
+        type_::Which::AnyPointer(_) => Err(Error::failed(
+            "Lists of anypointers not supported here yet".to_string(),
+        )),
+    }
+}
+fn build_impl_for_list_type(
+    name: &str,
+    list: type_::list::Reader,
+    union: bool,
+    is_params_struct: bool,
+) -> capnp::Result<String> {
+    let vec_source: String;
+    if union {
+        vec_source = "t".to_string();
+    } else if is_params_struct {
+        vec_source = format!("_{name}");
+    } else {
+        vec_source = format!("self._{name}");
+    }
+    Ok(match list.reborrow().get_element_type()?.which()? {
+        type_::Which::Text(_) => {
+            format!(
+                "
+            \nif {vec_source}.len() > 0 {{
+                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                for (i, item) in {vec_source}.into_iter().enumerate() {{
+                    list_builder.reborrow().set(i as u32, item.as_str().into());
+                }}
+            }}"
+            )
+        }
+        type_::Which::Data(_) => {
+            format!(
+                "
+            \nif {vec_source}.len() > 0 {{
+                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                for (i, item) in {vec_source}.into_iter().enumerate() {{
+                    list_builder.reborrow().set(i as u32, item.as_slice());
+                }}
+        }}"
+            )
+        }
+        type_::Which::List(_) => {
+            format!(
+                "
+            \nif {vec_source}.len() > 0 {{
+                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                for (i, item) in {vec_source}.into_iter().enumerate() {{
+                    {}
+                }}
+            }}",
+                build_list_of_list_impl(list.reborrow())?
+            )
+        }
+        type_::Which::Struct(_) => {
+            format!(
+                "
+            \nif {vec_source}.len() > 0 {{
+                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                for (i, item) in {vec_source}.into_iter().enumerate() {{
+                    item.build_capnp_struct(list_builder.reborrow().get(i as u32));
+                }}
+            }}"
+            )
+        }
+        type_::Which::Interface(_) => {
+            format!(
+                "
+            \nif {vec_source}.len() > 0 {{
+                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                for (i, item) in {vec_source}.into_iter().enumerate() {{
+                    list_builder.reborrow().set(i as u32, item.client.hook);
+                }}
+            }}"
+            )
+        }
+        type_::Which::AnyPointer(_) => "".to_string(),
+        _ => {
+            format!(
+                "
+            \nif {vec_source}.len() > 0 {{
+                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                for (i, item) in {vec_source}.into_iter().enumerate() {{
+                    list_builder.reborrow().set(i as u32, item);
+                }}
+            }}"
+            )
+        }
+    })
+}
+fn build_list_of_list_impl(list: type_::list::Reader) -> capnp::Result<String> {
+    Ok(match list.reborrow().get_element_type()?.which()? {
+        type_::Which::Text(_) => {
+            "\nlist_builder.reborrow().set(i as u32, item.as_str().into());".to_string()
+        }
+        type_::Which::Data(_) => {
+            "\nlist_builder.reborrow().set(i as u32, item.as_slice());".to_string()
+        }
+        type_::Which::List(reader) => {
+            format!("\n
+                if item.len() > 0 {{
+                    let mut list_builder = list_builder.reborrow().init(i as u32, item.len() as u32);
+                    for (i, item) in item.into_iter().enumerate() {{ {} }}
+                }}",
+                build_list_of_list_impl(reader)?)
+        }
+        type_::Which::Struct(_) => {
+            "\nitem.build_capnp_struct(list_builder.reborrow().get(i as u32));".to_string()
+        }
+        type_::Which::Interface(_) => {
+            "\nlist_builder.reborrow().set(i as u32, item.client.hook);".to_string()
+        }
+        type_::Which::AnyPointer(_) => "".to_string(),
+        _ => "\nlist_builder.reborrow().set(i as u32, item);".to_string(),
+    })
+}
 fn used_params_of_group(
     ctx: &GeneratorContext,
     group_id: u64,
@@ -1364,6 +1672,12 @@ fn generate_union(
     fields: &[schema_capnp::field::Reader],
     is_reader: bool,
     params: &TypeParameterTexts,
+    params_struct_string: &mut String,
+    params_struct_impl_string: &mut String,
+    params_enum_string: &mut String,
+    generate_params: bool,
+    union_only_struct: bool,
+    params_union_name: &String,
 ) -> ::capnp::Result<(
     FormattedText,
     FormattedText,
@@ -1390,11 +1704,169 @@ fn generate_union(
 
     let doffset = discriminant_offset as usize;
 
+    let mut params_impl_interior = String::new();
+    if generate_params {
+        if union_only_struct {
+            params_impl_interior.push_str("\n match self {");
+        } else {
+            params_impl_interior.push_str("\n match self.uni {");
+        }
+        params_impl_interior
+            .push_str(format!("\n {params_union_name}::UNINITIALIZED => (),").as_str());
+    }
+
     for field in fields {
         let dvalue = field.get_discriminant_value() as usize;
 
         let field_name = get_field_name(*field)?;
         let enumerant_name = capitalize_first_letter(field_name);
+
+        if generate_params {
+            let camel = camel_to_snake_case(field_name);
+            match field.which()? {
+                field::Which::Slot(reg_field) => {
+                    match reg_field.get_type()?.which()? {
+                        type_::Which::Text(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(String),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t.as_str().into()),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Data(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(Vec<u8>),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t.as_slice()),", camel.as_str()).as_str());
+                        }
+                        type_::Which::List(l) => {
+                            if let Ok(vec_of_list_element_types) =
+                                vec_of_list_element_types(ctx, l.reborrow())
+                            {
+                                params_enum_string.push_str(
+                                    format!("\n _{enumerant_name}({}),", vec_of_list_element_types)
+                                        .as_str(),
+                                );
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => {{\n{}\n}},", build_impl_for_list_type(camel.as_str(), l.reborrow(), true, false)?).as_str());
+                            }
+                        }
+                        type_::Which::Enum(e) => {
+                            let id = e.get_type_id();
+                            let the_mod = ctx.get_qualified_module(id);
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}({}),", the_mod).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Struct(struct_reader) => {
+                            let path_string = get_params_struct_path_string(ctx, struct_reader)?;
+                            let mut possibly_cyclical = false;
+                            if let node::Struct(st) =
+                                ctx.node_map[&struct_reader.get_type_id()].which()?
+                            {
+                                for field in st.get_fields()? {
+                                    match field.which()? {
+                                        field::Which::Slot(sl) => match sl.get_type()?.which()? {
+                                            type_::Which::List(_) => possibly_cyclical = true,
+                                            type_::Which::Struct(_) => possibly_cyclical = true,
+                                            _ => (),
+                                        },
+                                        field::Which::Group(_) => possibly_cyclical = true,
+                                    }
+                                }
+                            };
+                            if possibly_cyclical {
+                                params_enum_string.push_str(
+                                    format!("\n _{enumerant_name}(Box<{}>),", path_string).as_str(),
+                                );
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(builder.reborrow().init_{}()),", camel.as_str()).as_str());
+                            } else {
+                                params_enum_string.push_str(
+                                    format!("\n _{enumerant_name}({}),", path_string).as_str(),
+                                );
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(builder.reborrow().init_{}()),", camel.as_str()).as_str());
+                            }
+                        }
+                        type_::Which::Interface(i_t) => {
+                            if get_params(ctx, i_t.get_type_id())?.is_empty() {
+                                params_enum_string.push_str(
+                                    format!(
+                                        "\n _{enumerant_name}({}),",
+                                        reg_field.get_type()?.type_string(ctx, Leaf::Client)?
+                                    )
+                                    .as_str(),
+                                );
+                                params_impl_interior.push_str(format!("\n  {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            }
+                        }
+                        type_::Which::AnyPointer(_) => {
+                            //TODO implement for more than just caps
+                            if !reg_field.get_type()?.is_parameter()? {
+                                params_enum_string.push_str(fmt!(ctx, "\n _{enumerant_name}(Box<dyn {capnp}::private::capability::ClientHook>),").as_str());
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().init_{}().set_as_capability(t),", camel.as_str()).as_str());
+                            }
+                        }
+                        type_::Which::Void(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(()),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Bool(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(bool),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Int8(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(i8),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Int16(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(i16),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Int32(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(i32),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Int64(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(i64),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Uint8(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(u8),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Uint16(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(u16),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Uint32(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(u32),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Uint64(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(u64),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Float32(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(f32),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                        type_::Which::Float64(_) => {
+                            params_enum_string
+                                .push_str(format!("\n _{enumerant_name}(f64),").as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                        }
+                    }
+                }
+                field::Which::Group(_) => (),
+            }
+        }
 
         let (ty, get, maybe_default_decl) = getter_text(ctx, field, is_reader, false)?;
         if let Some(default_decl) = maybe_default_decl {
@@ -1441,7 +1913,6 @@ fn generate_union(
 
         enum_interior.push(Line(format!("{enumerant_name}({ty1}),")));
     }
-
     let enum_name = format!(
         "Which{}",
         if !ty_params.is_empty() {
@@ -1450,6 +1921,14 @@ fn generate_union(
             "".to_string()
         }
     );
+    if generate_params {
+        if !union_only_struct {
+            params_struct_string.push_str(format!("\n   pub uni: {params_union_name},").as_str());
+        }
+        if !params_impl_interior.is_empty() {
+            params_struct_impl_string.push_str(format!("{params_impl_interior}\n }}").as_str());
+        }
+    }
 
     getter_interior.push(Line(fmt!(
         ctx,
@@ -1945,6 +2424,9 @@ fn generate_node(
     ctx: &GeneratorContext,
     node_id: u64,
     node_name: &str,
+    rust_struct_inner: &mut String,
+    rust_struct_impl_inner: &mut String,
+    is_params_struct: bool,
 ) -> ::capnp::Result<FormattedText> {
     use capnp::schema_capnp::*;
 
@@ -1955,7 +2437,14 @@ fn generate_node(
     let nested_nodes = node_reader.get_nested_nodes()?;
     for nested_node in nested_nodes {
         let id = nested_node.get_id();
-        nested_output.push(generate_node(ctx, id, ctx.get_last_name(id)?)?);
+        nested_output.push(generate_node(
+            ctx,
+            id,
+            ctx.get_last_name(id)?,
+            &mut String::new(),
+            &mut String::new(),
+            false,
+        )?);
     }
 
     match node_reader.which()? {
@@ -2019,6 +2508,21 @@ fn generate_node(
 
             private_mod_interior.push(generate_members_by_discriminant(*node_reader)?);
 
+            let mut params_struct_string = String::new();
+            let mut params_struct_impl_string = String::new();
+            params_struct_string
+                .push_str(format!("pub struct {} {{", snake_to_camel_case(node_name)).as_str());
+            params_struct_impl_string
+                .push_str(format!("impl {} {{", snake_to_camel_case(node_name)).as_str());
+            params_struct_impl_string.push_str(
+                format!(
+                    "\npub fn build_capnp_struct<'a,{}>(self, mut builder: Builder<'a,{}>) {} {{",
+                    params.params, params.params, params.where_clause
+                )
+                .as_str(),
+            );
+            let mut union_only_struct = true;
+
             let fields = struct_reader.get_fields()?;
             for field in fields {
                 let name = get_field_name(field)?;
@@ -2028,6 +2532,7 @@ fn generate_node(
                 let is_union_field = discriminant_value != field::NO_DISCRIMINANT;
 
                 if !is_union_field {
+                    union_only_struct = false;
                     pipeline_impl_interior.push(generate_pipeline_getter(ctx, field)?);
                     let (ty, get, default_decl) = getter_text(ctx, &field, true, true)?;
                     if let Some(default) = default_decl {
@@ -2056,6 +2561,10 @@ fn generate_node(
                     discriminant_offset,
                     &styled_name,
                     &field,
+                    rust_struct_inner,
+                    rust_struct_impl_inner,
+                    is_params_struct,
+                    node_name,
                 )?);
 
                 reader_members.push(generate_haser(
@@ -2073,22 +2582,63 @@ fn generate_node(
 
                 if let Ok(field::Group(group)) = field.which() {
                     let id = group.get_type_id();
-                    let text = generate_node(ctx, id, ctx.get_last_name(id)?)?;
+                    let text = generate_node(
+                        ctx,
+                        id,
+                        ctx.get_last_name(id)?,
+                        &mut String::new(),
+                        &mut String::new(),
+                        false,
+                    )?;
                     nested_output.push(text);
                 }
             }
-
+            let mut params_enum_string = String::new();
+            let mut params_union_name: String;
             if discriminant_count > 0 {
-                let (which_enums1, union_getter, typedef, mut default_decls) =
-                    generate_union(ctx, discriminant_offset, &union_fields, true, &params)?;
+                if union_only_struct {
+                    params_union_name = snake_to_camel_case(node_name);
+                    params_enum_string = format!("pub enum {params_union_name} {{");
+                    params_struct_string = "".to_string();
+                } else {
+                    params_union_name = snake_to_camel_case(node_name);
+                    params_union_name.push_str("Union");
+                    params_enum_string = format!("pub enum {params_union_name} {{");
+                }
+                params_enum_string.push_str("\n UNINITIALIZED,");
+
+                let (which_enums1, union_getter, typedef, mut default_decls) = generate_union(
+                    ctx,
+                    discriminant_offset,
+                    &union_fields,
+                    true,
+                    &params,
+                    &mut params_struct_string,
+                    &mut params_struct_impl_string,
+                    &mut params_enum_string,
+                    true,
+                    union_only_struct,
+                    &params_union_name,
+                )?;
                 which_enums.push(which_enums1);
                 which_enums.push(typedef);
                 reader_members.push(union_getter);
 
                 private_mod_interior.append(&mut default_decls);
 
-                let (_, union_getter, typedef, _) =
-                    generate_union(ctx, discriminant_offset, &union_fields, false, &params)?;
+                let (_, union_getter, typedef, _) = generate_union(
+                    ctx,
+                    discriminant_offset,
+                    &union_fields,
+                    false,
+                    &params,
+                    &mut params_struct_string,
+                    &mut params_struct_impl_string,
+                    &mut params_enum_string,
+                    false,
+                    union_only_struct,
+                    &params_union_name,
+                )?;
                 which_enums.push(typedef);
                 builder_members.push(union_getter);
 
@@ -2102,6 +2652,24 @@ fn generate_node(
                 reexports.push_str("};");
                 preamble.push(Line(reexports));
                 preamble.push(BlankLine);
+            }
+
+            if !params_enum_string.is_empty() {
+                params_enum_string.push_str("\n}");
+            }
+
+            if !is_params_struct {
+                params_struct_string.push_str(rust_struct_inner);
+                params_struct_impl_string.push_str(rust_struct_impl_inner);
+                params_struct_impl_string.push_str("  \n}}");
+                if !params_struct_string.is_empty() {
+                    params_struct_string.push_str("  \n}");
+                }
+                output.push(Branch(vec![
+                    Line(params_struct_string),
+                    Line(params_struct_impl_string),
+                    Line(params_enum_string),
+                ]));
             }
 
             let builder_struct_size =
@@ -2481,10 +3049,6 @@ fn generate_node(
             let mut mod_interior = Vec::new();
             let mut dispatch_arms = Vec::new();
             let mut private_mod_interior = Vec::new();
-            let mut either_string = String::new();
-            let mut either_brackets = String::new();
-            let mut either_string_base = String::new();
-            let mut either_brackets_base = String::new();
 
             let bracketed_params = if params.params.is_empty() {
                 "".to_string()
@@ -2508,17 +3072,22 @@ fn generate_node(
             let methods = interface.get_methods()?;
             for (ordinal, method) in methods.into_iter().enumerate() {
                 let name = method.get_name()?.to_str()?;
-                if ordinal != 0 {
-                    either_string.push_str("::capnp::capability::Either::B(");
-                }
-                either_brackets.push(')');
 
                 let param_id = method.get_param_struct_type();
                 let param_node = &ctx.node_map[&param_id];
+                let mut builder_params_string = String::new();
+                let mut builder_params_inner_string = String::new();
                 let (param_scopes, params_ty_params) = if param_node.get_scope_id() == 0 {
                     let mut names = names.clone();
                     let local_name = module_name(&format!("{name}Params"));
-                    nested_output.push(generate_node(ctx, param_id, &local_name)?);
+                    nested_output.push(generate_node(
+                        ctx,
+                        param_id,
+                        &local_name,
+                        &mut builder_params_string,
+                        &mut builder_params_inner_string,
+                        true,
+                    )?);
                     names.push(local_name);
                     (names, params.params.clone())
                 } else {
@@ -2540,7 +3109,14 @@ fn generate_node(
                 let (result_scopes, results_ty_params) = if result_node.get_scope_id() == 0 {
                     let mut names = names.clone();
                     let local_name = module_name(&format!("{name}Results"));
-                    nested_output.push(generate_node(ctx, result_id, &local_name)?);
+                    nested_output.push(generate_node(
+                        ctx,
+                        result_id,
+                        &local_name,
+                        &mut String::new(),
+                        &mut String::new(),
+                        true,
+                    )?);
                     names.push(local_name);
                     (names, params.params.clone())
                 } else {
@@ -2597,6 +3173,30 @@ fn generate_node(
                 ))));
                 client_impl_interior.push(line("}"));
 
+                let params_type_string = format!(", {builder_params_string}");
+                let param_build_call =
+                    format!("let mut builder = req.get();\n{builder_params_inner_string}");
+
+                client_impl_interior.push(Line(fmt!(
+                    ctx,
+                    "pub fn build_{}_request(&self{}) -> {capnp}::capability::Request<{},{}> {} {{",
+                    camel_to_snake_case(name),
+                    params_type_string,
+                    param_type,
+                    result_type,
+                    params.where_clause
+                )));
+
+                client_impl_interior.push(indent(Line(fmt!(ctx,
+                    "let mut req: {capnp}::capability::Request<{},{}> = self.client.new_call(_private::TYPE_ID, {ordinal}, ::core::option::Option::None);
+                    {}
+                    req",
+                    param_type,
+                    result_type,
+                    param_build_call
+                ))));
+                client_impl_interior.push(line("}"));
+
                 method.get_annotations()?;
             }
 
@@ -2626,9 +3226,6 @@ fn generate_node(
                 let mut extends = Vec::new();
                 find_super_interfaces(interface, &mut extends, ctx)?;
                 for interface in &extends {
-                    either_string_base.push_str("::capnp::capability::Either::B(");
-                    either_brackets_base.push(')');
-
                     let type_id = interface.get_id();
                     let brand = interface.get_brand()?;
                     let the_mod = ctx.get_qualified_module(type_id);
@@ -2833,12 +3430,6 @@ fn generate_node(
                     indent(line("}")),
                     line("}")]));
 
-            if either_brackets.is_empty() {
-                either_string.push_str("::capnp::capability::Either::<std::future::Ready<Result<(), capnp::Error>>,_>::B(");
-                either_brackets.push(')');
-            } else {
-                either_string.push_str("::capnp::capability::Either::B(");
-            }
             mod_interior.push(
                 Branch(vec![
                     (if is_generic {
