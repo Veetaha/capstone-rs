@@ -176,7 +176,10 @@ impl DynamicSchema {
                     crate::schema_capnp::type_::Which::AnyPointer(_) => todo!(),
                 };
             }
-            node::Annotation(_) => eprintln!("Skipped annotation!"), // TODO: process annotations
+            node::Annotation(_) => {
+                // Because annotations do not add a type to the nodes hashmap, and AnnotationList relies on reading the actual
+                // encoded node for everything other than the type, we don't actually need to do anything with an annotation node.
+            }
             node::Enum(_) => {
                 let leak = Self::leak_chunk(*node, node.total_size()?)?;
                 nodes.insert(
@@ -463,6 +466,7 @@ impl Field {
                     found = match field.get_proto().which().unwrap() {
                         field::Slot(slot) => slot.get_type().ok(),
                         field::Group(_) => {
+                            // group.get_type_id() // need access to type mapping to find group's type node
                             panic!("don't know how to do groups yet");
                         }
                     };
@@ -779,8 +783,39 @@ impl AnnotationList {
         let ty = if self.get_annotation_type != dynamic_annotation_marker {
             (self.get_annotation_type)(self.child_index, index)
         } else {
-            // We do not support dynamic annotations yet
-            todo!();
+            match proto.get_value().unwrap().which().unwrap() {
+                crate::schema_capnp::value::Which::Void(_) => introspect::TypeVariant::Void,
+                crate::schema_capnp::value::Which::Bool(_) => introspect::TypeVariant::Bool,
+                crate::schema_capnp::value::Which::Int8(_) => introspect::TypeVariant::Int8,
+                crate::schema_capnp::value::Which::Int16(_) => introspect::TypeVariant::Int16,
+                crate::schema_capnp::value::Which::Int32(_) => introspect::TypeVariant::Int32,
+                crate::schema_capnp::value::Which::Int64(_) => introspect::TypeVariant::Int64,
+                crate::schema_capnp::value::Which::Uint8(_) => introspect::TypeVariant::UInt8,
+                crate::schema_capnp::value::Which::Uint16(_) => introspect::TypeVariant::UInt16,
+                crate::schema_capnp::value::Which::Uint32(_) => introspect::TypeVariant::UInt32,
+                crate::schema_capnp::value::Which::Uint64(_) => introspect::TypeVariant::UInt64,
+                crate::schema_capnp::value::Which::Float32(_) => introspect::TypeVariant::Float32,
+                crate::schema_capnp::value::Which::Float64(_) => introspect::TypeVariant::Float64,
+                crate::schema_capnp::value::Which::Text(_) => introspect::TypeVariant::Text,
+                crate::schema_capnp::value::Which::Data(_) => introspect::TypeVariant::Data,
+                crate::schema_capnp::value::Which::List(_) => {
+                    todo!();
+                }
+                crate::schema_capnp::value::Which::Enum(_) => TypeVariant::Enum(RawEnumSchema {
+                    encoded_node: &[],
+                    annotation_types: dynamic_annotation_marker,
+                }),
+                crate::schema_capnp::value::Which::Struct(_) => {
+                    todo!();
+                }
+                crate::schema_capnp::value::Which::Interface(_) => {
+                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
+                }
+                crate::schema_capnp::value::Which::AnyPointer(_) => {
+                    introspect::TypeVariant::AnyPointer
+                }
+            }
+            .into()
         };
 
         Annotation { proto, ty }

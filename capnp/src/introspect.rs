@@ -214,6 +214,8 @@ pub struct RawStructSchema {
 
     /// Map from discriminant value to field index.
     pub members_by_discriminant: &'static [u16],
+    // If this comes from a dynamic schema, points to the node mapping, otherwise is null.
+    //pub dynamic_schema: Option<&'static [TypeVariant]>,
     // TODO: members_by_name, allowing fast field lookup by name.
     // Indices of fields, sorted by their respective names.
     //pub members_by_name: &'static [u16],
