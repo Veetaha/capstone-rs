@@ -1060,7 +1060,7 @@ fn generate_setter(
                         )
                         .as_str(),
                     );
-                    rust_struct_impl_inner.push_str(format!("\n  {params_struct_impl_prefix}_{styled_name}.build_params(builder.reborrow().init_{styled_name}());").as_str());
+                    rust_struct_impl_inner.push_str(format!("\n  {params_struct_impl_prefix}_{styled_name}.build_capnp_struct(builder.reborrow().init_{styled_name}());").as_str());
                 }
                 "".to_string()
             } else {
@@ -1270,7 +1270,7 @@ fn generate_setter(
                                     )
                                     .as_str(),
                                 );
-                                rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_params(builder.reborrow().init_{styled_name}());}}").as_str());
+                                rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(builder.reborrow().init_{styled_name}());}}").as_str());
                             } else {
                                 rust_struct_inner.push_str(
                                     format!(
@@ -1279,7 +1279,7 @@ fn generate_setter(
                                     )
                                     .as_str(),
                                 );
-                                rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_params(builder.reborrow().init_{styled_name}());}}").as_str());
+                                rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(builder.reborrow().init_{styled_name}());}}").as_str());
                             }
                         }
                     }
@@ -1502,7 +1502,7 @@ fn build_impl_for_list_type(
             \nif {vec_source}.len() > 0 {{
                 let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
-                    item.build_params(list_builder.reborrow().get(i as u32));
+                    item.build_capnp_struct(list_builder.reborrow().get(i as u32));
                 }}
             }}"
             )
@@ -1543,7 +1543,7 @@ fn build_list_of_list_impl(
                 build_list_of_list_impl(ctx, name, reader)?)
         }
         type_::Which::Struct(_) => {
-            format!("\nitem.build_params(list_builder.reborrow().get(i as u32));")
+            format!("\nitem.build_capnp_struct(list_builder.reborrow().get(i as u32));")
         }
         type_::Which::Interface(_) => "".to_string(),
         type_::Which::AnyPointer(_) => "".to_string(),
@@ -1773,12 +1773,12 @@ fn generate_union(
                                 params_enum_string.push_str(
                                     format!("\n _{enumerant_name}(Box<{}>),", path_string).as_str(),
                                 );
-                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_params(builder.reborrow().init_{}()),", camel.as_str()).as_str());
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(builder.reborrow().init_{}()),", camel.as_str()).as_str());
                             } else {
                                 params_enum_string.push_str(
                                     format!("\n _{enumerant_name}({}),", path_string).as_str(),
                                 );
-                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_params(builder.reborrow().init_{}()),", camel.as_str()).as_str());
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(builder.reborrow().init_{}()),", camel.as_str()).as_str());
                             }
                         }
                         type_::Which::Interface(i_t) => {
@@ -2514,7 +2514,7 @@ fn generate_node(
                 .push_str(format!("impl {} {{", snake_to_camel_case(node_name)).as_str());
             params_struct_impl_string.push_str(
                 format!(
-                    "\npub fn build_params<'a,{}>(self, mut builder: Builder<'a,{}>) {} {{",
+                    "\npub fn build_capnp_struct<'a,{}>(self, mut builder: Builder<'a,{}>) {} {{",
                     params.params, params.params, params.where_clause
                 )
                 .as_str(),
