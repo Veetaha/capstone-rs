@@ -3,6 +3,7 @@ name = "pubsub"
 version = "0.1.0"
 authors = ["David Renshaw <david@sandstorm.io>"]
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "pubsub"
