@@ -4,6 +4,7 @@ name = "capnpc-test-edition-2021"
 version = "0.0.0"
 build = "build.rs"
 edition = "2021"
+license.workspace = true
 
 [lib]
 
