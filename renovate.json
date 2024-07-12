@@ -1,5 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>Fundament-Software/rust:renovate-rust.json"],
-  "forkProcessing": "enabled"
+  "forkProcessing": "enabled",
+  "ignorePaths": ["capnp-import/capstone/**"]
 }
