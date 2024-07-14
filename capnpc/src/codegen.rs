@@ -914,7 +914,7 @@ fn zero_fields_of_group(
     node_id: u64,
     clear: &mut bool,
 ) -> ::capnp::Result<FormattedText> {
-    use capnp::schema_capnp::{field, node, type_};
+    use capnp::schema_capnp::{field, node};
     match ctx.node_map[&node_id].which()? {
         node::Struct(st) => {
             let mut result = Vec::new();
@@ -1583,7 +1583,6 @@ fn used_params_of_type(
     ty: schema_capnp::type_::Reader,
     used_params: &mut HashSet<String>,
 ) -> capnp::Result<()> {
-    use capnp::schema_capnp::type_;
     match ty.which()? {
         type_::List(ls) => {
             let et = ls.get_element_type()?;
@@ -2048,7 +2047,7 @@ fn generate_pipeline_getter(
     ctx: &GeneratorContext,
     field: schema_capnp::field::Reader,
 ) -> ::capnp::Result<FormattedText> {
-    use capnp::schema_capnp::{field, type_};
+    use capnp::schema_capnp::field;
 
     let name = get_field_name(field)?;
 
@@ -2348,7 +2347,6 @@ fn get_ty_params_of_type_helper(
     accumulator: &mut HashSet<(u64, u16)>,
     typ: schema_capnp::type_::Reader,
 ) -> ::capnp::Result<()> {
-    use capnp::schema_capnp::type_;
     match typ.which()? {
         type_::Void(())
         | type_::Bool(())

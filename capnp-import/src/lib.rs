@@ -31,13 +31,18 @@ pub fn capnp_import(input: TokenStream) -> TokenStream {
     path_patterns.hash(&mut hasher);
 
     let helperfile = process_inner(path_patterns).unwrap();
-    let file_path = format!("{}/{}.rs", env!("OUT_DIR"), hasher.finish());
-    let _ = fs::write(&file_path, helperfile.to_string());
+    if let Ok(out_dir) = std::env::var("OUT_DIR") {
+        let file_path = PathBuf::from_str(&format!("{}/{}.rs", out_dir, hasher.finish())).unwrap();
+        let _ = fs::write(&file_path, helperfile.to_string());
+        let file_out = file_path.to_string_lossy().to_string();
 
-    quote! {
-        include!(#file_path);
+        quote! {
+            include!(#file_out);
+        }
+        .into()
+    } else {
+        helperfile.into()
     }
-    .into()
 }
 
 #[proc_macro]
