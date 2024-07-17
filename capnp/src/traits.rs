@@ -59,12 +59,15 @@ pub trait FromPointerReader<'a>: Sized {
 /// nonetheless as a type parameter, e.g. for a generic container that owns a Cap'n Proto
 /// message of type `T: capnp::traits::Owned`.
 pub trait Owned: crate::introspect::Introspect {
-    type Reader<'a>: FromPointerReader<'a> + SetPointerBuilder;
+    type Reader<'a>: FromPointerReader<'a> + SetPointerBuilder + Clone;
     type Builder<'a>: FromPointerBuilder<'a>;
 }
 
 pub trait OwnedStruct: crate::introspect::Introspect {
-    type Reader<'a>: From<StructReader<'a>> + SetPointerBuilder + IntoInternalStructReader<'a>;
+    type Reader<'a>: From<StructReader<'a>>
+        + SetPointerBuilder
+        + IntoInternalStructReader<'a>
+        + Copy;
     type Builder<'a>: From<StructBuilder<'a>> + HasStructSize;
 }
 

@@ -51,10 +51,18 @@ where
     type Builder<'a> = Builder<'a, T>;
 }
 
-#[derive(Clone, Copy)]
 pub struct Reader<'a, T> {
     marker: PhantomData<T>,
     reader: ListReader<'a>,
+}
+
+// Have to do this manually because derive(Copy) doesn't know about PhantomData
+impl<'a, T> Copy for Reader<'a, T> {}
+
+impl<'a, T> Clone for Reader<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<'a, T: TryFrom<u16, Error = NotInSchema>> Reader<'a, T> {
