@@ -73,9 +73,9 @@ fn process_inner(path_patterns: Vec<String>) -> Result<TokenStream2> {
     let manifest: [PathBuf; 1] = [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?];
 
     let globs = path_patterns.into_iter().flat_map(|s| {
-        let is_absolute = s.as_ref().starts_with('/');
+        let is_absolute = s.starts_with('/');
         let closure = move |dir| -> Result<Walk<'static>, BuildError> {
-            let glob = Glob::new(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()))?;
+            let glob = Glob::new(s.strip_prefix('/').unwrap_or(&s))?;
             Ok(glob.walk(dir).into_owned())
         };
         if is_absolute {
