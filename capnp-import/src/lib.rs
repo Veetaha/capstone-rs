@@ -11,7 +11,7 @@ use std::{env, fs, path::Path};
 use syn::parse::Parser;
 use syn::{LitStr, Token};
 use walkdir::WalkDir;
-use wax::{BuildError, Walk};
+use wax::{BuildError, Glob, Walk};
 
 use eyre::Context;
 
@@ -62,10 +62,9 @@ where
 
     let globs = path_patterns.into_iter().flat_map(|s| {
         let is_absolute = s.as_ref().starts_with('/');
-        let closure = move |dir| -> Result<Walk<'static>, BuildError<'static>> {
-            wax::walk(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()), dir)
-                .map_err(BuildError::into_owned)
-                .map(Walk::into_owned)
+        let closure = move |dir| -> Result<Walk<'static>, BuildError> {
+            let glob = Glob::new(s.as_ref().strip_prefix('/').unwrap_or(s.as_ref()))?;
+            Ok(glob.walk(dir).into_owned())
         };
         if is_absolute {
             searchpaths.iter().map(closure)
