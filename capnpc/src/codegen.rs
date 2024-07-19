@@ -914,7 +914,7 @@ fn zero_fields_of_group(
     node_id: u64,
     clear: &mut bool,
 ) -> ::capnp::Result<FormattedText> {
-    use capnp::schema_capnp::{field, node, type_};
+    use capnp::schema_capnp::{field, node};
     match ctx.node_map[&node_id].which()? {
         node::Struct(st) => {
             let mut result = Vec::new();
@@ -1060,7 +1060,7 @@ fn generate_setter(
                         )
                         .as_str(),
                     );
-                    rust_struct_impl_inner.push_str(format!("\n  {params_struct_impl_prefix}_{styled_name}.build_capnp_struct(builder.reborrow().init_{styled_name}());").as_str());
+                    rust_struct_impl_inner.push_str(format!("\n  {params_struct_impl_prefix}_{styled_name}.build_capnp_struct(_builder.reborrow().init_{styled_name}());").as_str());
                 }
                 "".to_string()
             } else {
@@ -1087,7 +1087,7 @@ fn generate_setter(
                         rust_struct_inner.push_str(
                             format!("{params_struct_prefix}_{styled_name}: (),").as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
                     }
                     (Some("()".to_string()), None)
                 }
@@ -1108,7 +1108,7 @@ fn generate_setter(
                         rust_struct_inner.push_str(
                             format!("{params_struct_prefix}_{styled_name}: bool,").as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
                     }
                     (Some("bool".to_string()), None)
                 }
@@ -1130,7 +1130,7 @@ fn generate_setter(
                         rust_struct_inner.push_str(
                             format!("{params_struct_prefix}_{styled_name}: {tstr},").as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
                     }
                     (Some(tstr), None)
                 }
@@ -1146,7 +1146,7 @@ fn generate_setter(
                         rust_struct_inner.push_str(
                             format!("{params_struct_prefix}_{styled_name}: String,").as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name}.as_str().into());").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name}.as_str().into());").as_str());
                     }
                     (
                         Some(fmt!(ctx, "{capnp}::text::Reader<'_>")),
@@ -1165,7 +1165,7 @@ fn generate_setter(
                         rust_struct_inner.push_str(
                             format!("{params_struct_prefix}_{styled_name}: Vec<u8>,").as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name}.as_slice().into());").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name}.as_slice().into());").as_str());
                     }
                     (
                         Some(fmt!(ctx, "{capnp}::data::Reader<'_>")),
@@ -1230,7 +1230,7 @@ fn generate_setter(
                         rust_struct_inner.push_str(
                             format!("{params_struct_prefix}_{styled_name}: {the_mod},").as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
                     }
                     if !reg_field.get_had_explicit_default() {
                         setter_interior.push(Line(format!(
@@ -1266,7 +1266,7 @@ fn generate_setter(
                                 )
                                 .as_str(),
                             );
-                            rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(builder.reborrow().init_{styled_name}());}}").as_str());
+                            rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(_builder.reborrow().init_{styled_name}());}}").as_str());
                         } else {
                             rust_struct_inner.push_str(
                                 format!(
@@ -1275,7 +1275,7 @@ fn generate_setter(
                                 )
                                 .as_str(),
                             );
-                            rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(builder.reborrow().init_{styled_name}());}}").as_str());
+                            rust_struct_impl_inner.push_str(format!("\n  if let Some(st) = {params_struct_impl_prefix}_{styled_name} {{st.build_capnp_struct(_builder.reborrow().init_{styled_name}());}}").as_str());
                         }
                     }
 
@@ -1311,7 +1311,7 @@ fn generate_setter(
                             )
                             .as_str(),
                         );
-                        rust_struct_impl_inner.push_str(format!("\n  builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
+                        rust_struct_impl_inner.push_str(format!("\n  _builder.set_{styled_name}({params_struct_impl_prefix}_{styled_name});").as_str());
                     }
                     setter_interior.push(Line(format!(
                         "self.builder.reborrow().get_pointer_field({offset}).set_capability(value.client.hook);"
@@ -1348,7 +1348,7 @@ fn generate_setter(
                         //TODO implement for anypointers besides caps
                         if no_discriminant {
                             rust_struct_inner.push_str(fmt!(ctx, "{params_struct_prefix}_{styled_name}: Box<dyn {capnp}::private::capability::ClientHook>,").as_str());
-                            rust_struct_impl_inner.push_str(format!("\n  builder.reborrow().init_{styled_name}().set_as_capability({params_struct_impl_prefix}_{styled_name});").as_str());
+                            rust_struct_impl_inner.push_str(format!("\n  _builder.reborrow().init_{styled_name}().set_as_capability({params_struct_impl_prefix}_{styled_name});").as_str());
                         }
                         initter_interior.push(Line(fmt!(ctx,"let mut result = {capnp}::any_pointer::Builder::new(self.builder.get_pointer_field({offset}));")));
                         initter_interior.push(line("result.clear();"));
@@ -1462,7 +1462,7 @@ fn build_impl_for_list_type(
             format!(
                 "
             \nif {vec_source}.len() > 0 {{
-                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                let mut list_builder = _builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
                     list_builder.reborrow().set(i as u32, item.as_str().into());
                 }}
@@ -1473,7 +1473,7 @@ fn build_impl_for_list_type(
             format!(
                 "
             \nif {vec_source}.len() > 0 {{
-                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                let mut list_builder = _builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
                     list_builder.reborrow().set(i as u32, item.as_slice());
                 }}
@@ -1484,7 +1484,7 @@ fn build_impl_for_list_type(
             format!(
                 "
             \nif {vec_source}.len() > 0 {{
-                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                let mut list_builder = _builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
                     {}
                 }}
@@ -1496,7 +1496,7 @@ fn build_impl_for_list_type(
             format!(
                 "
             \nif {vec_source}.len() > 0 {{
-                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                let mut list_builder = _builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
                     item.build_capnp_struct(list_builder.reborrow().get(i as u32));
                 }}
@@ -1507,7 +1507,7 @@ fn build_impl_for_list_type(
             format!(
                 "
             \nif {vec_source}.len() > 0 {{
-                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                let mut list_builder = _builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
                     list_builder.reborrow().set(i as u32, item.client.hook);
                 }}
@@ -1519,7 +1519,7 @@ fn build_impl_for_list_type(
             format!(
                 "
             \nif {vec_source}.len() > 0 {{
-                let mut list_builder = builder.reborrow().init_{name}({vec_source}.len() as u32);
+                let mut list_builder = _builder.reborrow().init_{name}({vec_source}.len() as u32);
                 for (i, item) in {vec_source}.into_iter().enumerate() {{
                     list_builder.reborrow().set(i as u32, item);
                 }}
@@ -1583,7 +1583,6 @@ fn used_params_of_type(
     ty: schema_capnp::type_::Reader,
     used_params: &mut HashSet<String>,
 ) -> capnp::Result<()> {
-    use capnp::schema_capnp::type_;
     match ty.which()? {
         type_::List(ls) => {
             let et = ls.get_element_type()?;
@@ -1729,12 +1728,12 @@ fn generate_union(
                         type_::Which::Text(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(String),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t.as_str().into()),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t.as_str().into()),", camel.as_str()).as_str());
                         }
                         type_::Which::Data(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(Vec<u8>),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t.as_slice()),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t.as_slice()),", camel.as_str()).as_str());
                         }
                         type_::Which::List(l) => {
                             if let Ok(vec_of_list_element_types) =
@@ -1752,7 +1751,7 @@ fn generate_union(
                             let the_mod = ctx.get_qualified_module(id);
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}({}),", the_mod).as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Struct(struct_reader) => {
                             let path_string = get_params_struct_path_string(ctx, struct_reader)?;
@@ -1775,12 +1774,12 @@ fn generate_union(
                                 params_enum_string.push_str(
                                     format!("\n _{enumerant_name}(Box<{}>),", path_string).as_str(),
                                 );
-                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(builder.reborrow().init_{}()),", camel.as_str()).as_str());
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(_builder.reborrow().init_{}()),", camel.as_str()).as_str());
                             } else {
                                 params_enum_string.push_str(
                                     format!("\n _{enumerant_name}({}),", path_string).as_str(),
                                 );
-                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(builder.reborrow().init_{}()),", camel.as_str()).as_str());
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => t.build_capnp_struct(_builder.reborrow().init_{}()),", camel.as_str()).as_str());
                             }
                         }
                         type_::Which::Interface(i_t) => {
@@ -1792,75 +1791,75 @@ fn generate_union(
                                     )
                                     .as_str(),
                                 );
-                                params_impl_interior.push_str(format!("\n  {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                                params_impl_interior.push_str(format!("\n  {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                             }
                         }
                         type_::Which::AnyPointer(_) => {
                             //TODO implement for more than just caps
                             if !reg_field.get_type()?.is_parameter()? {
                                 params_enum_string.push_str(fmt!(ctx, "\n _{enumerant_name}(Box<dyn {capnp}::private::capability::ClientHook>),").as_str());
-                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().init_{}().set_as_capability(t),", camel.as_str()).as_str());
+                                params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().init_{}().set_as_capability(t),", camel.as_str()).as_str());
                             }
                         }
                         type_::Which::Void(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(()),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Bool(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(bool),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Int8(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(i8),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Int16(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(i16),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Int32(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(i32),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Int64(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(i64),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Uint8(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(u8),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Uint16(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(u16),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Uint32(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(u32),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Uint64(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(u64),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Float32(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(f32),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                         type_::Which::Float64(_) => {
                             params_enum_string
                                 .push_str(format!("\n _{enumerant_name}(f64),").as_str());
-                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => builder.reborrow().set_{}(t),", camel.as_str()).as_str());
+                            params_impl_interior.push_str(format!("\n {params_union_name}::_{enumerant_name}(t) => _builder.reborrow().set_{}(t),", camel.as_str()).as_str());
                         }
                     }
                 }
@@ -2048,7 +2047,7 @@ fn generate_pipeline_getter(
     ctx: &GeneratorContext,
     field: schema_capnp::field::Reader,
 ) -> ::capnp::Result<FormattedText> {
-    use capnp::schema_capnp::{field, type_};
+    use capnp::schema_capnp::field;
 
     let name = get_field_name(field)?;
 
@@ -2348,7 +2347,6 @@ fn get_ty_params_of_type_helper(
     accumulator: &mut HashSet<(u64, u16)>,
     typ: schema_capnp::type_::Reader,
 ) -> ::capnp::Result<()> {
-    use capnp::schema_capnp::type_;
     match typ.which()? {
         type_::Void(())
         | type_::Bool(())
@@ -2516,7 +2514,7 @@ fn generate_node(
                 .push_str(format!("impl {} {{", snake_to_camel_case(node_name)).as_str());
             params_struct_impl_string.push_str(
                 format!(
-                    "\npub fn build_capnp_struct<'a,{}>(self, mut builder: Builder<'a,{}>) {} {{",
+                    "\npub fn build_capnp_struct<'a,{}>(self, mut _builder: Builder<'a,{}>) {} {{",
                     params.params, params.params, params.where_clause
                 )
                 .as_str(),
@@ -3175,7 +3173,7 @@ fn generate_node(
 
                 let params_type_string = format!(", {builder_params_string}");
                 let param_build_call =
-                    format!("let mut builder = req.get();\n{builder_params_inner_string}");
+                    format!("let mut _builder = req.get();\n{builder_params_inner_string}");
 
                 client_impl_interior.push(Line(fmt!(
                     ctx,

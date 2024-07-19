@@ -52,13 +52,21 @@ where
     type Builder<'a> = Builder<'a, T>;
 }
 
-#[derive(Clone, Copy)]
 pub struct Reader<'a, T>
 where
     T: PrimitiveElement,
 {
     marker: marker::PhantomData<T>,
     reader: ListReader<'a>,
+}
+
+// Have to do this manually because derive(Copy) doesn't know about PhantomData
+impl<'a, T: PrimitiveElement + introspect::Introspect> Copy for Reader<'a, T> {}
+
+impl<'a, T: PrimitiveElement + introspect::Introspect> Clone for Reader<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<'a, T: PrimitiveElement> Reader<'a, T> {

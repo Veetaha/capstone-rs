@@ -5,6 +5,7 @@ use eyre::{eyre, Result};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{env, fs, path::Path};
@@ -24,9 +25,24 @@ include!(concat!(env!("OUT_DIR"), "/extract_bin.rs"));
 pub fn capnp_import(input: TokenStream) -> TokenStream {
     let parser = syn::punctuated::Punctuated::<LitStr, Token![,]>::parse_separated_nonempty;
     let path_patterns = parser.parse(input).unwrap();
-    let path_patterns = path_patterns.into_iter().map(|item| item.value());
-    let result = process_inner(path_patterns).unwrap();
-    result.into()
+    let path_patterns: Vec<String> = path_patterns.into_iter().map(|item| item.value()).collect();
+
+    let mut hasher = DefaultHasher::new();
+    path_patterns.hash(&mut hasher);
+
+    let helperfile = process_inner(path_patterns).unwrap();
+    if let Ok(out_dir) = std::env::var("OUT_DIR") {
+        let file_path = PathBuf::from_str(&format!("{}/{}.rs", out_dir, hasher.finish())).unwrap();
+        let _ = fs::write(&file_path, helperfile.to_string());
+        let file_out = file_path.to_string_lossy().to_string();
+
+        quote! {
+            include!(#file_out);
+        }
+        .into()
+    } else {
+        helperfile.into()
+    }
 }
 
 #[proc_macro]
@@ -35,11 +51,7 @@ pub fn capnp_extract_bin(_: TokenStream) -> TokenStream {
     TokenStream2::from_str(&content).unwrap().into()
 }
 
-fn process_inner<I>(path_patterns: I) -> Result<TokenStream2>
-where
-    I: IntoIterator,
-    I::Item: AsRef<str>,
-{
+fn process_inner(path_patterns: Vec<String>) -> Result<TokenStream2> {
     let mut cmd = capnpc::CompilerCommand::new();
 
     let output_dir = commandhandle().context("could not create temporary capnp binary")?;
@@ -137,7 +149,7 @@ mod tests {
 
     #[test]
     fn basic_file_test() -> Result<()> {
-        let contents = process_inner(["tests/example.capnp"])?.to_string();
+        let contents = process_inner(vec!["tests/example.capnp".to_string()])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
         Ok(())
@@ -145,7 +157,7 @@ mod tests {
 
     #[test]
     fn glob_test() -> Result<()> {
-        let contents = process_inner(["tests/folder-test/*.capnp"])?;
+        let contents = process_inner(vec!["tests/folder-test/*.capnp".to_string()])?;
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
@@ -154,7 +166,7 @@ mod tests {
     #[should_panic]
     #[test]
     fn compile_fail_test() {
-        let _ = process_inner(["*********//*.capnp*"]).unwrap();
+        let _ = process_inner(vec!["*********//*.capnp*".to_string()]).unwrap();
     }
 
     #[test]
@@ -162,7 +174,7 @@ mod tests {
     fn search_test() -> Result<()> {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?.join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
-        let contents = process_inner(["/folder-test/*.capnp"])?;
+        let contents = process_inner(vec!["/folder-test/*.capnp".to_string()])?;
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
@@ -178,7 +190,7 @@ mod tests {
             .join("tests");
         std::env::set_var("DEP_TEST_WRONG_DIR", folder.as_os_str());
         // Should fail because DEP_TEST_WRONG_DIR is in the wrong format
-        let contents = process_inner(["/folder-test/*.capnp"]);
+        let contents = process_inner(vec!["/folder-test/*.capnp".to_string()]);
         std::env::remove_var("DEP_TEST_WRONG_DIR");
         contents.unwrap();
     }
@@ -192,7 +204,7 @@ mod tests {
             .join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the path doesn't start with '/'
-        let contents = process_inner(["folder-test/*.capnp"]);
+        let contents = process_inner(vec!["folder-test/*.capnp".to_string()]);
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         contents.unwrap();
     }
