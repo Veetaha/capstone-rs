@@ -51,13 +51,6 @@ pub fn capnp_extract_bin(_: TokenStream) -> TokenStream {
     TokenStream2::from_str(&content).unwrap().into()
 }
 
-/// Confirm wax partition is handling ../ as expected since its handling of parent dirs has varied across releases
-#[test]
-fn wax_partition_handles_parent_dir() {
-    let (search_prefix, _glob) = Glob::new("../schemas/**/*.capnp").unwrap().partition();
-    assert_eq!(search_prefix, PathBuf::new().join("..").join("schemas"),);
-}
-
 fn process_inner(path_patterns: &[impl AsRef<str>]) -> Result<TokenStream2> {
     if path_patterns.is_empty() {
         return Err(eyre!("No search patterns for capnp files specified"));
@@ -212,10 +205,21 @@ mod tests {
         let _ = process_inner(&vec!["*********//*.capnp*".to_string()]).unwrap();
     }
 
+    /// Confirm wax partition is handling ../ as expected since its handling of parent dirs has varied across releases
+    #[test]
+    fn wax_partition_handles_parent_dir() {
+        let (search_prefix, _glob) = Glob::new("../schemas/**/*.capnp").unwrap().partition();
+        assert_eq!(search_prefix, PathBuf::new().join("..").join("schemas"),);
+    }
+
+    fn project_subdir(dir: &str) -> Result<PathBuf> {
+        Ok(PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?.join(dir))
+    }
+
     #[test]
     #[serial]
     fn search_test() -> Result<()> {
-        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?.join("tests");
+        let folder = project_subdir("tests")?;
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         let contents = process_inner(&vec!["/folder-test/*.capnp".to_string()])?;
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
@@ -228,9 +232,7 @@ mod tests {
     #[serial]
     #[test]
     fn search_fail2_test() {
-        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("tests");
+        let folder = project_subdir("tests").unwrap();
         std::env::set_var("DEP_TEST_WRONG_DIR", folder.as_os_str());
         // Should fail because DEP_TEST_WRONG_DIR is in the wrong format
         let contents = process_inner(&vec!["/folder-test/*.capnp".to_string()]);
@@ -242,9 +244,7 @@ mod tests {
     #[serial]
     #[test]
     fn search_failure_test() {
-        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("tests");
+        let folder = project_subdir("tests").unwrap();
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the path doesn't start with '/'
         let contents = process_inner(&vec!["folder-test/*.capnp".to_string()]);
@@ -256,9 +256,7 @@ mod tests {
     #[serial]
     #[test]
     fn partial_failure_test() {
-        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("tests");
+        let folder = project_subdir("tests").unwrap();
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
 
         // This should fail because the second path doesn't start with '/'
@@ -273,17 +271,13 @@ mod tests {
     #[serial]
     #[test]
     fn eventual_success_test_empty() {
-        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("tests");
-        let empty_folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("tests_but_emptier");
+        let folder = project_subdir("tests").unwrap();
+        let empty_folder = project_subdir("tests_but_emptier").unwrap();
         fs::create_dir_all(&empty_folder).unwrap();
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         std::env::set_var("DEP_IGNORE_SCHEMA_DIR", empty_folder.as_os_str());
 
-        // This should succeed despite DEP_IGNORE_SCHEMA_DIR existing.
+        // This should succeed despite DEP_IGNORE_SCHEMA_DIR being empty
         let contents = process_inner(&vec![
             "tests/example.capnp".to_string(),
             "/folder-test/*.capnp".to_string(),
@@ -296,16 +290,12 @@ mod tests {
     #[serial]
     #[test]
     fn eventual_success_test_no_matches() {
-        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("tests");
-        let src_folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
-            .unwrap()
-            .join("src");
+        let folder = project_subdir("tests").unwrap();
+        let src_folder = project_subdir("src").unwrap();
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
-        std::env::set_var("DEP_IGNORE_SCHEMA_DIR", src_folder.as_os_str());
+        std::env::set_var("DEP_EMPTY_SCHEMA_DIR", src_folder.as_os_str());
 
-        // This should succeed despite DEP_IGNORE_SCHEMA_DIR existing.
+        // This should succeed despite DEP_IGNORE_SCHEMA_DIR being a folder with no matches
         let contents = process_inner(&vec![
             "tests/example.capnp".to_string(),
             "/folder-test/*.capnp".to_string(),
