@@ -74,9 +74,18 @@ fn process_inner(path_patterns: Vec<String>) -> Result<TokenStream2> {
 
     let globs = path_patterns.into_iter().flat_map(|s| {
         let is_absolute = s.starts_with('/');
-        let closure = move |dir| -> Result<Walk<'static>, BuildError> {
-            let glob = Glob::new(s.strip_prefix('/').unwrap_or(&s))?;
-            Ok(glob.walk(dir).into_owned())
+        let (prefix, end) = if let Some(_) = s.strip_prefix("../") {
+            s.split_at(3)
+        } else {
+            ("", s.strip_prefix('/').unwrap_or(&s))
+        };
+
+        let end = end.to_owned();
+        let prefix = prefix.to_owned();
+        let closure = move |dir: &PathBuf| -> Result<Walk<'static>, BuildError> {
+            let glob = Glob::new(s.strip_prefix('/').unwrap_or(&end))?;
+            let path = dir.join(PathBuf::from_str(&prefix)?);
+            Ok(glob.walk(path).into_owned())
         };
         if is_absolute {
             searchpaths.iter().map(closure)
