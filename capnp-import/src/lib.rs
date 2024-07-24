@@ -267,12 +267,32 @@ mod tests {
             .unwrap()
             .join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
+
         // This should fail because the second path doesn't start with '/'
         let contents = process_inner(&vec![
             "tests/example.capnp".to_string(),
             "folder-test/*.capnp".to_string(),
         ]);
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
+        contents.unwrap();
+    }
+
+    #[serial]
+    #[test]
+    fn eventual_success_test() {
+        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("tests");
+        std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
+        std::env::set_var("DEP_IGNORE_SCHEMA_DIR", "Z:/~~~~~~~~~~/illegal/");
+
+        // This should succeed despite DEP_IGNORE_SCHEMA_DIR existing.
+        let contents = process_inner(&vec![
+            "tests/example.capnp".to_string(),
+            "/folder-test/*.capnp".to_string(),
+        ]);
+        std::env::remove_var("DEP_TEST_SCHEMA_DIR");
+        std::env::remove_var("DEP_IGNORE_SCHEMA_DIR");
         contents.unwrap();
     }
 }
