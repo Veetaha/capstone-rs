@@ -58,20 +58,6 @@ fn wax_partition_handles_parent_dir() {
     assert_eq!(search_prefix, PathBuf::new().join("..").join("schemas"),);
 }
 
-fn flatten_with_results<T, E, II, IO>(iter_outer: IO) -> impl Iterator<Item = Result<T, E>>
-where
-    II: Iterator<Item = Result<T, E>>,
-    IO: Iterator<Item = Result<II, E>>,
-{
-    iter_outer.flat_map(|iter_inner_result| {
-        let (v, r) = match iter_inner_result {
-            Ok(v) => (Some(v), None),
-            Err(e) => (None, Some(Err(e))),
-        };
-        v.into_iter().flatten().chain(r)
-    })
-}
-
 fn process_inner(path_patterns: &[impl AsRef<str>]) -> Result<TokenStream2> {
     if path_patterns.is_empty() {
         return Err(eyre!("No search patterns for capnp files specified"));
@@ -97,36 +83,43 @@ fn process_inner(path_patterns: &[impl AsRef<str>]) -> Result<TokenStream2> {
 
     let manifest: [PathBuf; 1] = [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?];
 
-    let glob_matches = flatten_with_results(path_patterns
-        .into_iter()
-        .map(|pattern| {
+    let glob_matches = path_patterns
+        .iter()
+        .map(|pattern| -> eyre::Result<_> {
             let pattern = pattern.as_ref();
-            let initial_paths = if pattern.starts_with('/')  { &*searchpaths } else { &manifest };
-            let mut ensure_some = flatten_with_results(
-            initial_paths
-            .iter()
-            .map(|dir: &PathBuf| -> Result<_> {
-                // build glob and partition it into a static prefix and shorter glob pattern
-                // For example, converts "../schemas/*.capnp" into Path(../schemas) and Glob(*.capnp)
-                let (search_prefix, glob) = Glob::new(pattern.trim_start_matches('/'))?.partition();
-                Ok(glob.walk(dir.join(search_prefix)).into_owned().map(|res| Ok(res?)))
-            })).peekable();
-            if ensure_some.peek().is_none() {
-                return Err(eyre!(
-                    "No capnp files found matching {pattern}, did you mean to use an absolute path instead of a relative one?
-          Manifest directory for relative paths: {:#?}
-          Potential directories for absolute paths: {:#?}",
-                    manifest,
-                    searchpaths
-                ));
+            let (search_prefix, glob) = Glob::new(pattern.trim_start_matches('/'))?.partition();
+            Ok((pattern, search_prefix, glob))
+        }).map(|maybe_pattern| {
+            match maybe_pattern {
+                Ok((pattern, search_prefix, glob)) => {
+                    let initial_paths = if pattern.starts_with('/')  { &*searchpaths } else { &manifest };
+                    let mut ensure_some = initial_paths
+                    .iter()
+                    .flat_map(move |dir: &PathBuf| -> _ {
+                        // build glob and partition it into a static prefix and shorter glob pattern
+                        // For example, converts "../schemas/*.capnp" into Path(../schemas) and Glob(*.capnp)
+                        glob.walk(dir.join(&search_prefix)).into_owned().into_iter().flatten()
+                    }).peekable();
+                    if ensure_some.peek().is_none() {
+                        return Err(eyre!(
+                            "No capnp files found matching {pattern}, did you mean to use an absolute path instead of a relative one?
+                  Manifest directory for relative paths: {:#?}
+                  Potential directories for absolute paths: {:#?}",
+                            manifest,
+                            searchpaths
+                        ));
+                    }
+                    Ok(ensure_some)
+                },
+                Err(err) => Err(err),
             }
-            Ok(ensure_some)
-        }));
+        });
 
     for entry in glob_matches {
-        let entry = entry?;
-        if entry.file_type().is_file() {
-            cmd.file(entry.path());
+        for entry in entry? {
+            if entry.file_type().is_file() {
+                cmd.file(entry.path());
+            }
         }
     }
 
@@ -279,12 +272,38 @@ mod tests {
 
     #[serial]
     #[test]
-    fn eventual_success_test() {
+    fn eventual_success_test_empty() {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .unwrap()
             .join("tests");
+        let empty_folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("tests_but_emptier");
+        fs::create_dir_all(&empty_folder).unwrap();
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
-        std::env::set_var("DEP_IGNORE_SCHEMA_DIR", "Z:/~~~~~~~~~~/illegal/");
+        std::env::set_var("DEP_IGNORE_SCHEMA_DIR", empty_folder.as_os_str());
+
+        // This should succeed despite DEP_IGNORE_SCHEMA_DIR existing.
+        let contents = process_inner(&vec![
+            "tests/example.capnp".to_string(),
+            "/folder-test/*.capnp".to_string(),
+        ]);
+        std::env::remove_var("DEP_TEST_SCHEMA_DIR");
+        std::env::remove_var("DEP_IGNORE_SCHEMA_DIR");
+        contents.unwrap();
+    }
+
+    #[serial]
+    #[test]
+    fn eventual_success_test_no_matches() {
+        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("tests");
+        let src_folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("src");
+        std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
+        std::env::set_var("DEP_IGNORE_SCHEMA_DIR", src_folder.as_os_str());
 
         // This should succeed despite DEP_IGNORE_SCHEMA_DIR existing.
         let contents = process_inner(&vec![
