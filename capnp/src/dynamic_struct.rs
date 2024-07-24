@@ -448,6 +448,13 @@ impl<'a> Builder<'a> {
         self.has(field)
     }
 
+    pub fn copy_from<'b, T: crate::traits::IntoInternalStructReader<'b>>(
+        &mut self,
+        other: T,
+    ) -> Result<()> {
+        self.builder
+            .copy_content_from(&other.into_internal_struct_reader())
+    }
     // Directly sets a field capability pointer to the given index.
     // TODO: Refactor how capabilities work so this can be removed.
     pub unsafe fn set_capability_to_int(&mut self, field: Field, value: u32) -> Result<()> {

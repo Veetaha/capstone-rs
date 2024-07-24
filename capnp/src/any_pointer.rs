@@ -28,7 +28,7 @@ use alloc::{boxed::Box, vec::Vec};
 use crate::capability::FromClientHook;
 #[cfg(feature = "alloc")]
 use crate::private::capability::{ClientHook, PipelineHook, PipelineOp};
-use crate::private::layout::{PointerBuilder, PointerReader};
+use crate::private::layout::{PointerBuilder, PointerReader, StructReader};
 use crate::traits::{FromPointerBuilder, FromPointerReader, SetPointerBuilder};
 use crate::Result;
 
@@ -96,6 +96,12 @@ impl<'a> Reader<'a> {
         }
 
         pointer.get_capability()
+    }
+}
+
+impl<'a> crate::traits::IntoInternalStructReader<'a> for Reader<'a> {
+    fn into_internal_struct_reader(self) -> crate::private::layout::StructReader<'a> {
+        self.reader.get_struct(None).unwrap()
     }
 }
 
