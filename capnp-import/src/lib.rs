@@ -98,7 +98,7 @@ fn process_inner(path_patterns: &[impl AsRef<str>]) -> Result<TokenStream2> {
                     .flat_map(move |dir: &PathBuf| -> _ {
                         // build glob and partition it into a static prefix and shorter glob pattern
                         // For example, converts "../schemas/*.capnp" into Path(../schemas) and Glob(*.capnp)
-                        glob.walk(dir.join(&search_prefix)).into_owned().into_iter().flatten()
+                        glob.walk(dir.join(&search_prefix)).into_owned().flatten()
                     }).peekable();
                     if ensure_some.peek().is_none() {
                         return Err(eyre!(
