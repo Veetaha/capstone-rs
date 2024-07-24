@@ -28,7 +28,7 @@ use alloc::{boxed::Box, vec::Vec};
 use crate::capability::FromClientHook;
 #[cfg(feature = "alloc")]
 use crate::private::capability::{ClientHook, PipelineHook, PipelineOp};
-use crate::private::layout::{PointerBuilder, PointerReader, StructReader};
+use crate::private::layout::{PointerBuilder, PointerReader};
 use crate::traits::{FromPointerBuilder, FromPointerReader, SetPointerBuilder};
 use crate::Result;
 
