@@ -12,7 +12,7 @@ use std::{env, fs, path::Path};
 use syn::parse::Parser;
 use syn::{LitStr, Token};
 use walkdir::WalkDir;
-use wax::{BuildError, Glob, Walk};
+use wax::Glob;
 
 use eyre::Context;
 
@@ -30,7 +30,7 @@ pub fn capnp_import(input: TokenStream) -> TokenStream {
     let mut hasher = DefaultHasher::new();
     path_patterns.hash(&mut hasher);
 
-    let helperfile = process_inner(path_patterns).unwrap();
+    let helperfile = process_inner(&path_patterns).unwrap();
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
         let file_path = PathBuf::from_str(&format!("{}/{}.rs", out_dir, hasher.finish())).unwrap();
         let _ = fs::write(&file_path, helperfile.to_string());
@@ -51,7 +51,32 @@ pub fn capnp_extract_bin(_: TokenStream) -> TokenStream {
     TokenStream2::from_str(&content).unwrap().into()
 }
 
-fn process_inner(path_patterns: Vec<String>) -> Result<TokenStream2> {
+/// Confirm wax partition is handling ../ as expected since its handling of parent dirs has varied across releases
+#[test]
+fn wax_partition_handles_parent_dir() {
+    let (search_prefix, _glob) = Glob::new("../schemas/**/*.capnp").unwrap().partition();
+    assert_eq!(search_prefix, PathBuf::new().join("..").join("schemas"),);
+}
+
+fn flatten_with_results<T, E, II, IO>(iter_outer: IO) -> impl Iterator<Item = Result<T, E>>
+where
+    II: Iterator<Item = Result<T, E>>,
+    IO: Iterator<Item = Result<II, E>>,
+{
+    iter_outer.flat_map(|iter_inner_result| {
+        let (v, r) = match iter_inner_result {
+            Ok(v) => (Some(v), None),
+            Err(e) => (None, Some(Err(e))),
+        };
+        v.into_iter().flatten().chain(r)
+    })
+}
+
+fn process_inner(path_patterns: &[impl AsRef<str>]) -> Result<TokenStream2> {
+    if path_patterns.is_empty() {
+        return Err(eyre!("No search patterns for capnp files specified"));
+    }
+
     let mut cmd = capnpc::CompilerCommand::new();
 
     let output_dir = commandhandle().context("could not create temporary capnp binary")?;
@@ -72,38 +97,41 @@ fn process_inner(path_patterns: Vec<String>) -> Result<TokenStream2> {
 
     let manifest: [PathBuf; 1] = [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?];
 
-    let globs = path_patterns.into_iter().flat_map(|s| {
-        let is_absolute = s.starts_with('/');
-        let (prefix, end) = if let Some(_) = s.strip_prefix("../") {
-            s.split_at(3)
-        } else {
-            ("", s.strip_prefix('/').unwrap_or(&s))
-        };
-
-        let end = end.to_owned();
-        let prefix = prefix.to_owned();
-        let closure = move |dir: &PathBuf| -> Result<Walk<'static>, BuildError> {
-            let glob = Glob::new(s.strip_prefix('/').unwrap_or(&end))?;
-            let path = dir.join(PathBuf::from_str(&prefix)?);
-            Ok(glob.walk(path).into_owned())
-        };
-        if is_absolute {
-            searchpaths.iter().map(closure)
-        } else {
-            manifest.iter().map(closure)
-        }
-    });
-
-    for entry_result in globs {
-        for entry in (entry_result?).flatten() {
-            let path: PathBuf = entry.into_path();
-            if path.is_file() {
-                cmd.file(path);
+    let glob_matches = flatten_with_results(path_patterns
+        .into_iter()
+        .map(|pattern| {
+            let pattern = pattern.as_ref();
+            let initial_paths = if pattern.starts_with('/')  { &*searchpaths } else { &manifest };
+            let mut ensure_some = flatten_with_results(
+            initial_paths
+            .iter()
+            .map(|dir: &PathBuf| -> Result<_> {
+                // build glob and partition it into a static prefix and shorter glob pattern
+                // For example, converts "../schemas/*.capnp" into Path(../schemas) and Glob(*.capnp)
+                let (search_prefix, glob) = Glob::new(pattern.trim_start_matches('/'))?.partition();
+                Ok(glob.walk(dir.join(search_prefix)).into_owned().map(|res| Ok(res?)))
+            })).peekable();
+            if ensure_some.peek().is_none() {
+                return Err(eyre!(
+                    "No capnp files found matching {pattern}, did you mean to use an absolute path instead of a relative one?
+          Manifest directory for relative paths: {:#?}
+          Potential directories for absolute paths: {:#?}",
+                    manifest,
+                    searchpaths
+                ));
             }
+            Ok(ensure_some)
+        }));
+
+    for entry in glob_matches {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            cmd.file(entry.path());
         }
     }
 
     if cmd.file_count() == 0 {
+        // I think the only way we can reach this now is by failing the is_file() check above
         return Err(eyre!(
             "No capnp files found, did you mean to use an absolute path instead of a relative one?
   Manifest directory for relative paths: {:#?}
@@ -161,7 +189,7 @@ mod tests {
 
     #[test]
     fn basic_file_test() -> Result<()> {
-        let contents = process_inner(vec!["tests/example.capnp".to_string()])?.to_string();
+        let contents = process_inner(&vec!["tests/example.capnp".to_string()])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
         Ok(())
@@ -171,7 +199,7 @@ mod tests {
     fn relative_file_test() -> Result<()> {
         // NOTE: if the project name changes this test will have to be changed
         let contents =
-            process_inner(vec!["../capnp-import/tests/example.capnp".to_string()])?.to_string();
+            process_inner(&vec!["../capnp-import/tests/example.capnp".to_string()])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
         Ok(())
@@ -179,7 +207,7 @@ mod tests {
 
     #[test]
     fn glob_test() -> Result<()> {
-        let contents = process_inner(vec!["tests/folder-test/*.capnp".to_string()])?;
+        let contents = process_inner(&vec!["tests/folder-test/*.capnp".to_string()])?;
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
@@ -188,7 +216,7 @@ mod tests {
     #[should_panic]
     #[test]
     fn compile_fail_test() {
-        let _ = process_inner(vec!["*********//*.capnp*".to_string()]).unwrap();
+        let _ = process_inner(&vec!["*********//*.capnp*".to_string()]).unwrap();
     }
 
     #[test]
@@ -196,7 +224,7 @@ mod tests {
     fn search_test() -> Result<()> {
         let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?.join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
-        let contents = process_inner(vec!["/folder-test/*.capnp".to_string()])?;
+        let contents = process_inner(&vec!["/folder-test/*.capnp".to_string()])?;
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
@@ -212,7 +240,7 @@ mod tests {
             .join("tests");
         std::env::set_var("DEP_TEST_WRONG_DIR", folder.as_os_str());
         // Should fail because DEP_TEST_WRONG_DIR is in the wrong format
-        let contents = process_inner(vec!["/folder-test/*.capnp".to_string()]);
+        let contents = process_inner(&vec!["/folder-test/*.capnp".to_string()]);
         std::env::remove_var("DEP_TEST_WRONG_DIR");
         contents.unwrap();
     }
@@ -226,7 +254,7 @@ mod tests {
             .join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the path doesn't start with '/'
-        let contents = process_inner(vec!["folder-test/*.capnp".to_string()]);
+        let contents = process_inner(&vec!["folder-test/*.capnp".to_string()]);
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         contents.unwrap();
     }
@@ -240,7 +268,7 @@ mod tests {
             .join("tests");
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the second path doesn't start with '/'
-        let contents = process_inner(vec![
+        let contents = process_inner(&vec![
             "tests/example.capnp".to_string(),
             "folder-test/*.capnp".to_string(),
         ]);
