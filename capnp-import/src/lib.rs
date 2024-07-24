@@ -96,7 +96,10 @@ fn process_inner(path_patterns: Vec<String>) -> Result<TokenStream2> {
 
     if cmd.file_count() == 0 {
         return Err(eyre!(
-            "No capnp files found, did you mean to use an absolute path instead of a relative one? Potential directories for absolute paths: {:#?}",
+            "No capnp files found, did you mean to use an absolute path instead of a relative one?
+  Manifest directory for relative paths: {:#?}
+  Potential directories for absolute paths: {:#?}",
+            manifest,
             searchpaths
         ));
     }
@@ -156,6 +159,16 @@ mod tests {
     }
 
     #[test]
+    fn relative_file_test() -> Result<()> {
+        // NOTE: if the project name changes this test will have to be changed
+        let contents =
+            process_inner(vec!["../capnp-import/tests/example.capnp".to_string()])?.to_string();
+        assert!(contents.starts_with("pub mod example_capnp {"));
+        assert!(contents.ends_with('}'));
+        Ok(())
+    }
+
+    #[test]
     fn glob_test() -> Result<()> {
         let contents = process_inner(vec!["tests/folder-test/*.capnp".to_string()])?;
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
@@ -205,6 +218,23 @@ mod tests {
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the path doesn't start with '/'
         let contents = process_inner(vec!["folder-test/*.capnp".to_string()]);
+        std::env::remove_var("DEP_TEST_SCHEMA_DIR");
+        contents.unwrap();
+    }
+
+    #[should_panic]
+    #[serial]
+    #[test]
+    fn partial_failure_test() {
+        let folder = PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+            .unwrap()
+            .join("tests");
+        std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
+        // This should fail because the second path doesn't start with '/'
+        let contents = process_inner(vec![
+            "tests/example.capnp".to_string(),
+            "folder-test/*.capnp".to_string(),
+        ]);
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         contents.unwrap();
     }
