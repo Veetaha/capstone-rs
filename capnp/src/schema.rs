@@ -121,6 +121,7 @@ impl DynamicSchema {
                     generic: raw,
                     field_types: dynamic_field_marker,
                     annotation_types: dynamic_annotation_marker,
+                    dynamic_schema: None, // TODO: this is impossible
                 };
 
                 nodes.insert(id, TypeVariant::Struct(schema));
@@ -213,6 +214,7 @@ impl DynamicSchema {
 
         let request: crate::schema_capnp::code_generator_request::Reader = this.msg.get_root()?;
         let mut node_map: HashMap<u64, crate::schema_capnp::node::Reader> = HashMap::new();
+        let mut nodes = Box::leak(Box::new(HashMap::new()));
 
         for node in request.get_nodes()? {
             node_map.insert(node.get_id(), node);
@@ -259,7 +261,7 @@ impl DynamicSchema {
                 this.root = node.get_id();
             }
 
-            Self::process_node(&mut this.nodes, node.get_id(), &mut this.scopes, &node_map)?;
+            Self::process_node(nodes, node.get_id(), &mut this.scopes, &node_map)?;
         }
         Ok(this)
     }
@@ -492,7 +494,7 @@ impl Field {
                 crate::schema_capnp::type_::Which::List(_) => {
                     todo!();
                 }
-                crate::schema_capnp::type_::Which::Enum(_) => TypeVariant::Enum(RawEnumSchema {
+                crate::schema_capnp::type_::Which::Enum(s) => TypeVariant::Enum(RawEnumSchema {
                     encoded_node: &[],
                     annotation_types: dynamic_annotation_marker,
                 }),
