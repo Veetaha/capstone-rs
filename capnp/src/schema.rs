@@ -374,59 +374,47 @@ impl std::ops::Drop for DynamicSchema {
         let mut nodes = Arc::<_>::into_inner(nodes)
             .expect("DynamicSchema.nodes is expected to be the only strong ref");
 
-        // ensure we don't try to double free the squirrels for debug builds
-        // double Drop should never happen in safe rust but there's a lot of unsafe code around here
-        // so this could help in debugging if somewhere else lost track of the squirrels
-        fn free_as_box_and_poison<T>(val: &mut &T) {
-            // SAFETY: We're assuming that this pointer was originally created from a Box.
-            // If this assumption is violated, this operation is undefined behavior.
-            const {
-                assert!(
-                    std::mem::size_of::<T>() > 0,
-                    "free_as_box_and_poison: zero-sized type detected"
-                );
-            }
-            #[cfg(debug_assertions)]
-            // FIXME: use ptr::dangling_mut once stable
-            let dangling = core::mem::align_of::<T>();
+        fn free_as_box<T: ?Sized>(val: &mut &&T) {
+            // SAFETY: We're assuming that this pointer was originally created from a Box
+            // and hasn't already been freed
+            // and isn't still used anywhere (but we can't prevent that because it was in a public ref field)
+            // If any assumption is violated, this operation is undefined behavior.
+            // this is kinda UB already even if these assumptions hold
+            // because leaving a ref to freed space live is not allowed
+            // and miri test will probably screm
+            // so maybe we should just leak it forever how bad could it be
+            use core::mem;
             unsafe {
-                let ptr = *val as *const T as *mut T;
-                #[cfg(debug_assertions)]
-                {
-                    assert!(
-                        !ptr.is_null(),
-                        "free_as_box_and_poison: null pointer detected"
-                    );
-                    assert!(
-                        ptr != dangling as *mut T,
-                        "free_as_box_and_poison: poisoned pointer detected"
-                    );
-                    assert!(
-                        ptr.is_aligned(),
-                        "free_as_box_and_poison: misaligned pointer detected"
-                    );
-                }
-                drop(Box::from_raw(ptr));
-                #[cfg(debug_assertions)]
-                {
-                    *val = &*(dangling as *const _)
-                }
+                assert!(
+                    mem::transmute::<_, usize>((*val as *const &T).cast::<()>()) != 0,
+                    "free_as_box: null ptr"
+                );
+                assert!(
+                    !(*val as *const &T).is_aligned(),
+                    "free_as_box: not aligned ptr"
+                );
+                assert!(
+                    *val as *const _ != mem::align_of::<&T>() as *const _,
+                    "free_as_box: already freed ptr"
+                );
+                drop(Box::from_raw((**val) as *const T as *mut T));
+                *val = &*(mem::align_of::<&T>() as *const _);
             }
         }
 
         for v in nodes.values_mut() {
             match v {
                 TypeVariant::Struct(s) => {
-                    free_as_box_and_poison(&mut &s.generic.encoded_node);
-                    free_as_box_and_poison(&mut &s.generic.members_by_discriminant);
-                    free_as_box_and_poison(&mut &s.generic.nonunion_members);
-                    free_as_box_and_poison(&mut &s.generic);
+                    free_as_box(&mut &s.generic.encoded_node);
+                    free_as_box(&mut &s.generic.members_by_discriminant);
+                    free_as_box(&mut &s.generic.nonunion_members);
+                    free_as_box(&mut &s.generic);
                 }
                 TypeVariant::Enum(e) => {
-                    free_as_box_and_poison(&mut &e.encoded_node);
+                    free_as_box(&mut &e.encoded_node);
                 }
                 TypeVariant::Capability(c) => {
-                    free_as_box_and_poison(&mut &c.encoded_node);
+                    free_as_box(&mut &c.encoded_node);
                 }
                 TypeVariant::List(_) => todo!(),
                 _ => (), // do nothing unless it's something we allocated memory for
