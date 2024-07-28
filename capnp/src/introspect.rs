@@ -235,7 +235,7 @@ pub struct RawBrandedStructSchema {
     pub annotation_types: fn(Option<u16>, u32) -> Type,
 
     // If this comes from a dynamic schema, points to the node mapping, otherwise is null.
-    pub dynamic_schema: Option<&'static std::collections::HashMap<u64, TypeVariant>>,
+    pub dynamic_schema: Option<crate::schema::DynamicSchemaToken>,
 }
 
 impl core::cmp::PartialEq for RawBrandedStructSchema {
