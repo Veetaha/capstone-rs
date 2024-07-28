@@ -263,7 +263,7 @@ impl DynamicSchema {
         let token = DynamicSchemaToken::new();
 
         let mut nodes = HashMap::new();
-        let request: crate::schema_capnp::code_generator_request::Reader = msg.get_root().unwrap();
+        let request: crate::schema_capnp::code_generator_request::Reader = msg.get_root()?;
         let mut node_map: HashMap<u64, crate::schema_capnp::node::Reader> = HashMap::new();
 
         for node in request.get_nodes()? {
@@ -300,7 +300,7 @@ impl DynamicSchema {
             }
         }
 
-        for node in request.get_nodes().unwrap() {
+        for node in request.get_nodes()? {
             if node_parents[&node.get_id()] == 0 {
                 root = match root {
                     0 => Ok(node.get_id()),
@@ -310,7 +310,7 @@ impl DynamicSchema {
                 }?;
             }
 
-            Self::process_node(&mut nodes, node.get_id(), &mut scopes, &node_map, token).unwrap();
+            Self::process_node(&mut nodes, node.get_id(), &mut scopes, &node_map, token)?;
         }
 
         let this = Self {
