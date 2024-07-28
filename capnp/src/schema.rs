@@ -387,15 +387,21 @@ impl std::ops::Drop for DynamicSchema {
             unsafe {
                 assert!(
                     mem::transmute::<_, usize>((*val as *const &T).cast::<()>()) != 0,
-                    "free_as_box: null ptr"
+                    "free_as_box: null ptr to {} has val {:#?}",
+                    std::any::type_name::<T>(),
+                    (*val as *const &T),
                 );
                 assert!(
-                    !(*val as *const &T).is_aligned(),
-                    "free_as_box: not aligned ptr"
+                    (*val as *const &T).is_aligned(),
+                    "free_as_box: not aligned ptr to {} has val {:#?}",
+                    std::any::type_name::<T>(),
+                    (*val as *const &T),
                 );
                 assert!(
                     *val as *const _ != mem::align_of::<&T>() as *const _,
-                    "free_as_box: already freed ptr"
+                    "free_as_box: already freed ptr to {} has val {:#?}",
+                    std::any::type_name::<T>(),
+                    (*val as *const &T),
                 );
                 drop(Box::from_raw((**val) as *const T as *mut T));
                 *val = &*(mem::align_of::<&T>() as *const _);
