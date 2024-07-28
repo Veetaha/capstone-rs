@@ -10,8 +10,10 @@ use crate::struct_list;
 use crate::traits::{IndexMove, ListIter, ShortListIter};
 use crate::Result;
 
+use core::u64;
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
+use std::sync::{atomic, Arc, OnceLock, Weak};
 
 #[cfg(all(feature = "std", feature = "alloc"))]
 // Builds introspection information at runtime to allow building a StructSchema
@@ -19,8 +21,52 @@ pub struct DynamicSchema {
     msg: crate::message::Reader<crate::serialize::OwnedSegments>,
     scopes: HashMap<(u64, String), u64>,
     node_parents: HashMap<u64, u64>,
-    nodes: HashMap<u64, TypeVariant>,
+    // This must never have non-weak refs to it other than this one
+    // or dropping DynamicSchema will panic
+    // so never expose this directly or clone it
+    nodes: Arc<HashMap<u64, TypeVariant>>,
+    token: DynamicSchemaToken,
     root: u64,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct DynamicSchemaToken(u64);
+
+impl DynamicSchemaToken {
+    fn new() -> Self {
+        static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
+        match COUNTER.fetch_add(1, atomic::Ordering::Relaxed) {
+            u64::MAX => panic!("DynamicSchemaToken counter overflow"),
+            count => Self(count),
+        }
+    }
+}
+
+struct DynamicSchemaRegistry {
+    schemas: flurry::HashMap<DynamicSchemaToken, Weak<HashMap<u64, TypeVariant>>>,
+}
+
+impl DynamicSchemaRegistry {
+    fn insert(&self, token: DynamicSchemaToken, schema: Weak<HashMap<u64, TypeVariant>>) {
+        self.schemas.pin().insert(token, schema);
+    }
+
+    fn get(&self, token: &DynamicSchemaToken) -> Option<Weak<HashMap<u64, TypeVariant>>> {
+        self.schemas.pin().get(token).cloned()
+    }
+
+    fn remove(&self, token: &DynamicSchemaToken) {
+        self.schemas.pin().remove(token);
+    }
+}
+
+// Once MSRV >= 1.80 this can be a LazyLock
+static REGISTRY: OnceLock<DynamicSchemaRegistry> = OnceLock::new();
+
+fn get_registry() -> &'static DynamicSchemaRegistry {
+    REGISTRY.get_or_init(|| DynamicSchemaRegistry {
+        schemas: flurry::HashMap::new(),
+    })
 }
 
 //const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
@@ -97,6 +143,7 @@ impl DynamicSchema {
         id: u64,
         scopes: &mut HashMap<(u64, String), u64>,
         node_map: &HashMap<u64, crate::schema_capnp::node::Reader>,
+        token: DynamicSchemaToken,
     ) -> Result<()> {
         let node = &node_map[&id];
 
@@ -121,7 +168,7 @@ impl DynamicSchema {
                     generic: raw,
                     field_types: dynamic_field_marker,
                     annotation_types: dynamic_annotation_marker,
-                    dynamic_schema: None, // TODO: this is impossible
+                    dynamic_schema: Some(token),
                 };
 
                 nodes.insert(id, TypeVariant::Struct(schema));
@@ -204,21 +251,18 @@ impl DynamicSchema {
     }
 
     pub fn new(msg: crate::message::Reader<crate::serialize::OwnedSegments>) -> Result<Self> {
-        let mut this = Self {
-            msg,
-            scopes: HashMap::new(),
-            node_parents: HashMap::new(),
-            nodes: HashMap::new(),
-            root: 0,
-        };
+        let mut scopes = HashMap::new();
+        let mut node_parents = HashMap::new();
+        let mut root = 0;
+        let token = DynamicSchemaToken::new();
 
-        let request: crate::schema_capnp::code_generator_request::Reader = this.msg.get_root()?;
+        let mut nodes = HashMap::new();
+        let request: crate::schema_capnp::code_generator_request::Reader = msg.get_root().unwrap();
         let mut node_map: HashMap<u64, crate::schema_capnp::node::Reader> = HashMap::new();
-        let mut nodes = Box::leak(Box::new(HashMap::new()));
 
         for node in request.get_nodes()? {
             node_map.insert(node.get_id(), node);
-            this.node_parents.insert(node.get_id(), node.get_scope_id());
+            node_parents.insert(node.get_id(), node.get_scope_id());
         }
 
         // Fix up "anonymous" method params and results scopes.
@@ -226,12 +270,12 @@ impl DynamicSchema {
             if let Ok(crate::schema_capnp::node::Interface(interface_reader)) = node.which() {
                 for method in interface_reader.get_methods()? {
                     let param_struct_type = method.get_param_struct_type();
-                    if this.node_parents.get(&param_struct_type) == Some(&0) {
-                        this.node_parents.insert(param_struct_type, node.get_id());
+                    if node_parents.get(&param_struct_type) == Some(&0) {
+                        node_parents.insert(param_struct_type, node.get_id());
                     }
                     let result_struct_type = method.get_result_struct_type();
-                    if this.node_parents.get(&result_struct_type) == Some(&0) {
-                        this.node_parents.insert(result_struct_type, node.get_id());
+                    if node_parents.get(&result_struct_type) == Some(&0) {
+                        node_parents.insert(result_struct_type, node.get_id());
                     }
                 }
             }
@@ -243,26 +287,39 @@ impl DynamicSchema {
 
             for import in requested_file.get_imports()? {
                 let import_id = import.get_id();
-                if this.node_parents.get(&import_id) == Some(&0) {
-                    this.node_parents.insert(import_id, id);
+                if node_parents.get(&import_id) == Some(&0) {
+                    node_parents.insert(import_id, id);
                 }
-                this.scopes
-                    .insert((id, import.get_name()?.to_string()?), import_id);
+                scopes.insert((id, import.get_name()?.to_string()?), import_id);
             }
         }
 
-        for node in request.get_nodes()? {
-            if this.node_parents[&node.get_id()] == 0 {
-                if this.root != 0 {
-                    return Err(crate::Error::from_kind(
+        for node in request.get_nodes().unwrap() {
+            if node_parents[&node.get_id()] == 0 {
+                root = match root {
+                    0 => Ok(node.get_id()),
+                    _ => Err(crate::Error::from_kind(
                         crate::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
-                    ));
-                }
-                this.root = node.get_id();
+                    )),
+                }?;
             }
 
-            Self::process_node(nodes, node.get_id(), &mut this.scopes, &node_map)?;
+            Self::process_node(&mut nodes, node.get_id(), &mut scopes, &node_map, token).unwrap();
         }
+
+        let this = Self {
+            msg,
+            scopes,
+            node_parents,
+            nodes: Arc::new(nodes),
+            root,
+            token,
+        };
+
+        // Register the weak reference in the registry after creating DynamicSchema
+        // because its Drop is responsible for cleaning up the registry
+        get_registry().insert(token, Arc::downgrade(&this.nodes));
+
         Ok(this)
     }
 
@@ -405,6 +462,15 @@ impl StructSchema {
             write!(error, "{}", name);
             Err(error)
         }
+    }
+
+    // Add a method to access the dynamic schema if available
+    pub fn get_dynamic_schema(&self) -> Option<impl AsRef<HashMap<u64, TypeVariant>>> {
+        self.raw
+            .dynamic_schema
+            .as_ref()
+            .and_then(|token| get_registry().get(token))
+            .and_then(|w| w.upgrade())
     }
 
     pub fn get_union_fields(self) -> Result<FieldSubset> {
