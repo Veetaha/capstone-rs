@@ -10,7 +10,6 @@ use crate::struct_list;
 use crate::traits::{IndexMove, ListIter, ShortListIter};
 use crate::Result;
 
-use core::u64;
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
 use std::sync::{atomic, Arc, OnceLock, Weak};
@@ -39,6 +38,10 @@ impl DynamicSchemaToken {
             u64::MAX => panic!("DynamicSchemaToken counter overflow"),
             count => Self(count),
         }
+    }
+
+    pub fn try_as_ref(&self) -> Option<impl AsRef<HashMap<u64, TypeVariant>>> {
+        get_registry().get(self).and_then(|w| w.upgrade())
     }
 }
 
@@ -498,15 +501,6 @@ impl StructSchema {
             write!(error, "{}", name);
             Err(error)
         }
-    }
-
-    // Add a method to access the dynamic schema if available
-    pub fn get_dynamic_schema(&self) -> Option<impl AsRef<HashMap<u64, TypeVariant>>> {
-        self.raw
-            .dynamic_schema
-            .as_ref()
-            .and_then(|token| get_registry().get(token))
-            .and_then(|w| w.upgrade())
     }
 
     pub fn get_union_fields(self) -> Result<FieldSubset> {
