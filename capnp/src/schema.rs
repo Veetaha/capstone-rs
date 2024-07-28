@@ -156,8 +156,11 @@ impl DynamicSchema {
                 // do nothing
             }
             node::Struct(st) => {
-                let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
+                // Deliberately leak these, intended to be cleaned up in DynamicSchema's Drop
+                // if we encounter an error after creating these but before the DynamicSchema is created
+                // these leak forever :(
                 let leak = Self::leak_chunk(*node, node.total_size()?)?;
+                let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
                 let raw = Box::leak(Box::new(introspect::RawStructSchema {
                     encoded_node: leak,
                     nonunion_members: nonunion_member_indexes,
@@ -352,42 +355,75 @@ impl DynamicSchema {
 #[cfg(all(feature = "std", feature = "alloc"))]
 impl std::ops::Drop for DynamicSchema {
     fn drop(&mut self) {
+        // SAFETY: this Drop implementation is invalid to call if
+        // any of the refs freed via free_as_box_and_poison in nodes were not
+        // originally created from a Box
+        // If self.nodes was ever cloned this drop will panic.
+
         // To clean up our mess of memory we have to iterate through all our types
         // and start re-capturing the raw pointers into boxes, like trying to herd
         // a bunch of extremely unsafe squirrels that got loose.
 
-        for v in self.nodes.values_mut() {
+        // schema token is no longer valid as soon as we start dropping
+        get_registry().remove(&self.token);
+
+        let nodes = core::mem::replace(&mut self.nodes, Arc::new(Default::default()));
+        let mut nodes = Arc::<_>::into_inner(nodes)
+            .expect("DynamicSchema.nodes is expected to be the only strong ref");
+
+        // ensure we don't try to double free the squirrels for debug builds
+        // double Drop should never happen in safe rust but there's a lot of unsafe code around here
+        // so this could help in debugging if somewhere else lost track of the squirrels
+        fn free_as_box_and_poison<T>(val: &mut &T) {
+            // SAFETY: We're assuming that this pointer was originally created from a Box.
+            // If this assumption is violated, this operation is undefined behavior.
+            const {
+                assert!(
+                    std::mem::size_of::<T>() > 0,
+                    "free_as_box_and_poison: zero-sized type detected"
+                );
+            }
+            #[cfg(debug_assertions)]
+            // FIXME: use ptr::dangling_mut once stable
+            let dangling = core::mem::align_of::<T>();
+            unsafe {
+                let ptr = *val as *const T as *mut T;
+                #[cfg(debug_assertions)]
+                {
+                    assert!(
+                        !ptr.is_null(),
+                        "free_as_box_and_poison: null pointer detected"
+                    );
+                    assert!(
+                        ptr != dangling as *mut T,
+                        "free_as_box_and_poison: poisoned pointer detected"
+                    );
+                    assert!(
+                        ptr.is_aligned(),
+                        "free_as_box_and_poison: misaligned pointer detected"
+                    );
+                }
+                drop(Box::from_raw(ptr));
+                #[cfg(debug_assertions)]
+                {
+                    *val = &*(dangling as *const _)
+                }
+            }
+        }
+
+        for v in nodes.values_mut() {
             match v {
                 TypeVariant::Struct(s) => {
-                    let _ = unsafe {
-                        Box::from_raw(
-                            s.generic.encoded_node as *const [crate::Word] as *mut [crate::Word],
-                        )
-                    };
-                    let _ = unsafe {
-                        Box::from_raw(
-                            s.generic.members_by_discriminant as *const [u16] as *mut [u16],
-                        )
-                    };
-                    let _ = unsafe {
-                        Box::from_raw(s.generic.nonunion_members as *const [u16] as *mut [u16])
-                    };
-                    let _ = unsafe {
-                        Box::from_raw(
-                            s.generic as *const crate::introspect::RawStructSchema
-                                as *mut crate::introspect::RawStructSchema,
-                        )
-                    };
+                    free_as_box_and_poison(&mut &s.generic.encoded_node);
+                    free_as_box_and_poison(&mut &s.generic.members_by_discriminant);
+                    free_as_box_and_poison(&mut &s.generic.nonunion_members);
+                    free_as_box_and_poison(&mut &s.generic);
                 }
                 TypeVariant::Enum(e) => {
-                    let _ = unsafe {
-                        Box::from_raw(e.encoded_node as *const [crate::Word] as *mut [crate::Word])
-                    };
+                    free_as_box_and_poison(&mut &e.encoded_node);
                 }
                 TypeVariant::Capability(c) => {
-                    let _ = unsafe {
-                        Box::from_raw(c.encoded_node as *const [crate::Word] as *mut [crate::Word])
-                    };
+                    free_as_box_and_poison(&mut &c.encoded_node);
                 }
                 TypeVariant::List(_) => todo!(),
                 _ => (), // do nothing unless it's something we allocated memory for
