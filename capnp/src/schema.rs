@@ -12,14 +12,13 @@ use crate::Result;
 
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
-use std::sync::{atomic, Arc, OnceLock, Weak};
+use std::sync::{atomic, Arc, LazyLock, Weak};
 
 #[cfg(all(feature = "std", feature = "alloc"))]
 // Builds introspection information at runtime to allow building a StructSchema
 pub struct DynamicSchema {
-    msg: crate::message::Reader<crate::serialize::OwnedSegments>,
+    msg: Option<crate::message::Reader<crate::serialize::OwnedSegments>>,
     scopes: HashMap<(u64, String), u64>,
-    node_parents: HashMap<u64, u64>,
     // This must never have non-weak refs to it other than this one
     // or dropping DynamicSchema will panic
     // so never expose this directly or clone it
@@ -63,13 +62,23 @@ impl DynamicSchemaRegistry {
     }
 }
 
-// Once MSRV >= 1.80 this can be a LazyLock
-static REGISTRY: OnceLock<DynamicSchemaRegistry> = OnceLock::new();
+static REGISTRY: LazyLock<DynamicSchemaRegistry> = LazyLock::new(|| DynamicSchemaRegistry {
+    schemas: flurry::HashMap::new(),
+});
 
 fn get_registry() -> &'static DynamicSchemaRegistry {
-    REGISTRY.get_or_init(|| DynamicSchemaRegistry {
-        schemas: flurry::HashMap::new(),
-    })
+    &REGISTRY
+}
+
+fn get_type_variant(token: &DynamicSchemaToken, id: u64) -> Result<TypeVariant> {
+    let hash = token.try_as_ref().ok_or(crate::Error::failed(
+        "Schema token not present in registry!".into(),
+    ))?;
+
+    Ok(*hash.as_ref().get(&id).ok_or(crate::Error::failed(format!(
+        "Could not find type id {}",
+        id
+    )))?)
 }
 
 //const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
@@ -227,7 +236,9 @@ impl DynamicSchema {
                     crate::schema_capnp::type_::Which::Enum(_) => todo!(),
                     crate::schema_capnp::type_::Which::Struct(_) => todo!(),
                     crate::schema_capnp::type_::Which::Interface(_) => todo!(),
-                    crate::schema_capnp::type_::Which::AnyPointer(_) => todo!(),
+                    crate::schema_capnp::type_::Which::AnyPointer(_) => {
+                        nodes.insert(id, TypeVariant::AnyPointer)
+                    }
                 };
             }
             node::Annotation(_) => {
@@ -256,7 +267,9 @@ impl DynamicSchema {
         Ok(())
     }
 
-    pub fn new(msg: crate::message::Reader<crate::serialize::OwnedSegments>) -> Result<Self> {
+    fn new_generic<S: crate::message::ReaderSegments>(
+        msg: &crate::message::Reader<S>,
+    ) -> Result<Self> {
         let mut scopes = HashMap::new();
         let mut node_parents = HashMap::new();
         let mut root = 0;
@@ -314,9 +327,8 @@ impl DynamicSchema {
         }
 
         let this = Self {
-            msg,
+            msg: None,
             scopes,
-            node_parents,
             nodes: Arc::new(nodes),
             root,
             token,
@@ -327,6 +339,18 @@ impl DynamicSchema {
         get_registry().insert(token, Arc::downgrade(&this.nodes));
 
         Ok(this)
+    }
+
+    pub fn new(msg: crate::message::Reader<crate::serialize::OwnedSegments>) -> Result<Self> {
+        let mut this = Self::new_generic(&msg)?;
+        this.msg = Some(msg);
+        Ok(this)
+    }
+
+    pub fn new_ref<S: crate::message::ReaderSegments>(
+        msg: crate::message::Reader<S>,
+    ) -> Result<Self> {
+        Self::new_generic(&msg)
     }
 
     pub fn get_type_by_id(&self, id: u64) -> Option<&TypeVariant> {
@@ -549,56 +573,66 @@ impl Field {
         self.proto
     }
 
+    fn resolve_type_reader(
+        reader: &crate::schema_capnp::type_::Reader,
+        token: DynamicSchemaToken,
+    ) -> Result<TypeVariant> {
+        Ok(match reader.which()? {
+            crate::schema_capnp::type_::Which::Void(_) => TypeVariant::Void,
+            crate::schema_capnp::type_::Which::Bool(_) => TypeVariant::Bool,
+            crate::schema_capnp::type_::Which::Int8(_) => TypeVariant::Int8,
+            crate::schema_capnp::type_::Which::Int16(_) => TypeVariant::Int16,
+            crate::schema_capnp::type_::Which::Int32(_) => TypeVariant::Int32,
+            crate::schema_capnp::type_::Which::Int64(_) => TypeVariant::Int64,
+            crate::schema_capnp::type_::Which::Uint8(_) => TypeVariant::UInt8,
+            crate::schema_capnp::type_::Which::Uint16(_) => TypeVariant::UInt16,
+            crate::schema_capnp::type_::Which::Uint32(_) => TypeVariant::UInt32,
+            crate::schema_capnp::type_::Which::Uint64(_) => TypeVariant::UInt64,
+            crate::schema_capnp::type_::Which::Float32(_) => TypeVariant::Float32,
+            crate::schema_capnp::type_::Which::Float64(_) => TypeVariant::Float64,
+            crate::schema_capnp::type_::Which::Text(_) => TypeVariant::Text,
+            crate::schema_capnp::type_::Which::Data(_) => TypeVariant::Data,
+            crate::schema_capnp::type_::Which::AnyPointer(_) => TypeVariant::AnyPointer,
+            crate::schema_capnp::type_::Which::List(r) => {
+                TypeVariant::List(Self::resolve_type_reader(&r.get_element_type()?, token)?.into())
+            }
+            crate::schema_capnp::type_::Which::Enum(r) => {
+                get_type_variant(&token, r.get_type_id())?
+            }
+            crate::schema_capnp::type_::Which::Struct(r) => {
+                get_type_variant(&token, r.get_type_id())?
+            }
+            crate::schema_capnp::type_::Which::Interface(r) => {
+                get_type_variant(&token, r.get_type_id())?
+            }
+        })
+    }
+
     pub fn get_type(&self) -> introspect::Type {
         #[allow(clippy::fn_address_comparisons)]
         if self.parent.raw.field_types == dynamic_field_marker {
-            let mut found: Option<crate::schema_capnp::type_::Reader> = None;
             for (index, field) in self.parent.get_fields().unwrap().iter().enumerate() {
                 if index as u16 == self.index {
-                    found = match field.get_proto().which().unwrap() {
-                        field::Slot(slot) => slot.get_type().ok(),
-                        field::Group(_) => {
-                            // group.get_type_id() // need access to type mapping to find group's type node
-                            panic!("don't know how to do groups yet");
+                    return match field.get_proto().which().unwrap() {
+                        field::Slot(slot) => Self::resolve_type_reader(
+                            &slot.get_type().unwrap(),
+                            self.parent.raw.dynamic_schema.unwrap(),
+                        )
+                        .unwrap(),
+                        field::Group(group) => {
+                            let token = self.parent.raw.dynamic_schema.unwrap();
+                            let variant = get_type_variant(&token, group.get_type_id()).unwrap();
+                            match variant {
+                                TypeVariant::Struct(s) => TypeVariant::Struct(s),
+                                _ => panic!("Found group type that wasn't a struct"),
+                            }
                         }
-                    };
+                    }
+                    .into();
                 }
             }
 
-            // If anything goes wrong we have to panic anyway
-            match found.unwrap().which().unwrap() {
-                crate::schema_capnp::type_::Which::Void(_) => introspect::TypeVariant::Void,
-                crate::schema_capnp::type_::Which::Bool(_) => introspect::TypeVariant::Bool,
-                crate::schema_capnp::type_::Which::Int8(_) => introspect::TypeVariant::Int8,
-                crate::schema_capnp::type_::Which::Int16(_) => introspect::TypeVariant::Int16,
-                crate::schema_capnp::type_::Which::Int32(_) => introspect::TypeVariant::Int32,
-                crate::schema_capnp::type_::Which::Int64(_) => introspect::TypeVariant::Int64,
-                crate::schema_capnp::type_::Which::Uint8(_) => introspect::TypeVariant::UInt8,
-                crate::schema_capnp::type_::Which::Uint16(_) => introspect::TypeVariant::UInt16,
-                crate::schema_capnp::type_::Which::Uint32(_) => introspect::TypeVariant::UInt32,
-                crate::schema_capnp::type_::Which::Uint64(_) => introspect::TypeVariant::UInt64,
-                crate::schema_capnp::type_::Which::Float32(_) => introspect::TypeVariant::Float32,
-                crate::schema_capnp::type_::Which::Float64(_) => introspect::TypeVariant::Float64,
-                crate::schema_capnp::type_::Which::Text(_) => introspect::TypeVariant::Text,
-                crate::schema_capnp::type_::Which::Data(_) => introspect::TypeVariant::Data,
-                crate::schema_capnp::type_::Which::List(_) => {
-                    todo!();
-                }
-                crate::schema_capnp::type_::Which::Enum(s) => TypeVariant::Enum(RawEnumSchema {
-                    encoded_node: &[],
-                    annotation_types: dynamic_annotation_marker,
-                }),
-                crate::schema_capnp::type_::Which::Struct(_) => {
-                    todo!();
-                }
-                crate::schema_capnp::type_::Which::Interface(_) => {
-                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
-                }
-                crate::schema_capnp::type_::Which::AnyPointer(_) => {
-                    introspect::TypeVariant::AnyPointer
-                }
-            }
-            .into()
+            panic!("Could not find type!");
         } else {
             (self.parent.raw.field_types)(self.index)
         }
@@ -876,20 +910,20 @@ impl AnnotationList {
             (self.get_annotation_type)(self.child_index, index)
         } else {
             match proto.get_value().unwrap().which().unwrap() {
-                crate::schema_capnp::value::Which::Void(_) => introspect::TypeVariant::Void,
-                crate::schema_capnp::value::Which::Bool(_) => introspect::TypeVariant::Bool,
-                crate::schema_capnp::value::Which::Int8(_) => introspect::TypeVariant::Int8,
-                crate::schema_capnp::value::Which::Int16(_) => introspect::TypeVariant::Int16,
-                crate::schema_capnp::value::Which::Int32(_) => introspect::TypeVariant::Int32,
-                crate::schema_capnp::value::Which::Int64(_) => introspect::TypeVariant::Int64,
-                crate::schema_capnp::value::Which::Uint8(_) => introspect::TypeVariant::UInt8,
-                crate::schema_capnp::value::Which::Uint16(_) => introspect::TypeVariant::UInt16,
-                crate::schema_capnp::value::Which::Uint32(_) => introspect::TypeVariant::UInt32,
-                crate::schema_capnp::value::Which::Uint64(_) => introspect::TypeVariant::UInt64,
-                crate::schema_capnp::value::Which::Float32(_) => introspect::TypeVariant::Float32,
-                crate::schema_capnp::value::Which::Float64(_) => introspect::TypeVariant::Float64,
-                crate::schema_capnp::value::Which::Text(_) => introspect::TypeVariant::Text,
-                crate::schema_capnp::value::Which::Data(_) => introspect::TypeVariant::Data,
+                crate::schema_capnp::value::Which::Void(_) => TypeVariant::Void,
+                crate::schema_capnp::value::Which::Bool(_) => TypeVariant::Bool,
+                crate::schema_capnp::value::Which::Int8(_) => TypeVariant::Int8,
+                crate::schema_capnp::value::Which::Int16(_) => TypeVariant::Int16,
+                crate::schema_capnp::value::Which::Int32(_) => TypeVariant::Int32,
+                crate::schema_capnp::value::Which::Int64(_) => TypeVariant::Int64,
+                crate::schema_capnp::value::Which::Uint8(_) => TypeVariant::UInt8,
+                crate::schema_capnp::value::Which::Uint16(_) => TypeVariant::UInt16,
+                crate::schema_capnp::value::Which::Uint32(_) => TypeVariant::UInt32,
+                crate::schema_capnp::value::Which::Uint64(_) => TypeVariant::UInt64,
+                crate::schema_capnp::value::Which::Float32(_) => TypeVariant::Float32,
+                crate::schema_capnp::value::Which::Float64(_) => TypeVariant::Float64,
+                crate::schema_capnp::value::Which::Text(_) => TypeVariant::Text,
+                crate::schema_capnp::value::Which::Data(_) => TypeVariant::Data,
                 crate::schema_capnp::value::Which::List(_) => {
                     todo!();
                 }
@@ -903,9 +937,7 @@ impl AnnotationList {
                 crate::schema_capnp::value::Which::Interface(_) => {
                     TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
                 }
-                crate::schema_capnp::value::Which::AnyPointer(_) => {
-                    introspect::TypeVariant::AnyPointer
-                }
+                crate::schema_capnp::value::Which::AnyPointer(_) => TypeVariant::AnyPointer,
             }
             .into()
         };
