@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn basic_file_test() -> Result<()> {
-        let contents = process_inner(&vec!["tests/example.capnp".to_string()])?.to_string();
+        let contents = process_inner(&["tests/example.capnp".to_string()])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
         Ok(())
@@ -185,7 +185,7 @@ mod tests {
     fn relative_file_test() -> Result<()> {
         // NOTE: if the project name changes this test will have to be changed
         let contents =
-            process_inner(&vec!["../capnp-import/tests/example.capnp".to_string()])?.to_string();
+            process_inner(&["../capnp-import/tests/example.capnp".to_string()])?.to_string();
         assert!(contents.starts_with("pub mod example_capnp {"));
         assert!(contents.ends_with('}'));
         Ok(())
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn glob_test() -> Result<()> {
-        let contents = process_inner(&vec!["tests/folder-test/*.capnp".to_string()])?;
+        let contents = process_inner(&["tests/folder-test/*.capnp".to_string()])?;
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
         Ok(())
@@ -202,7 +202,7 @@ mod tests {
     #[should_panic]
     #[test]
     fn compile_fail_test() {
-        let _ = process_inner(&vec!["*********//*.capnp*".to_string()]).unwrap();
+        let _ = process_inner(&["*********//*.capnp*".to_string()]).unwrap();
     }
 
     /// Confirm wax partition is handling ../ as expected since its handling of parent dirs has varied across releases
@@ -221,7 +221,7 @@ mod tests {
     fn search_test() -> Result<()> {
         let folder = project_subdir("tests")?;
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
-        let contents = process_inner(&vec!["/folder-test/*.capnp".to_string()])?;
+        let contents = process_inner(&["/folder-test/*.capnp".to_string()])?;
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         let tests_module: syn::ItemMod = syn::parse2(contents)?;
         assert_eq!(tests_module.ident, "foo_capnp");
@@ -235,7 +235,7 @@ mod tests {
         let folder = project_subdir("tests").unwrap();
         std::env::set_var("DEP_TEST_WRONG_DIR", folder.as_os_str());
         // Should fail because DEP_TEST_WRONG_DIR is in the wrong format
-        let contents = process_inner(&vec!["/folder-test/*.capnp".to_string()]);
+        let contents = process_inner(&["/folder-test/*.capnp".to_string()]);
         std::env::remove_var("DEP_TEST_WRONG_DIR");
         contents.unwrap();
     }
@@ -247,7 +247,7 @@ mod tests {
         let folder = project_subdir("tests").unwrap();
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
         // This should fail because the path doesn't start with '/'
-        let contents = process_inner(&vec!["folder-test/*.capnp".to_string()]);
+        let contents = process_inner(&["folder-test/*.capnp".to_string()]);
         std::env::remove_var("DEP_TEST_SCHEMA_DIR");
         contents.unwrap();
     }
@@ -260,7 +260,7 @@ mod tests {
         std::env::set_var("DEP_TEST_SCHEMA_DIR", folder.as_os_str());
 
         // This should fail because the second path doesn't start with '/'
-        let contents = process_inner(&vec![
+        let contents = process_inner(&[
             "tests/example.capnp".to_string(),
             "folder-test/*.capnp".to_string(),
         ]);
@@ -278,7 +278,7 @@ mod tests {
         std::env::set_var("DEP_IGNORE_SCHEMA_DIR", empty_folder.as_os_str());
 
         // This should succeed despite DEP_IGNORE_SCHEMA_DIR being empty
-        let contents = process_inner(&vec![
+        let contents = process_inner(&[
             "tests/example.capnp".to_string(),
             "/folder-test/*.capnp".to_string(),
         ]);
@@ -296,7 +296,7 @@ mod tests {
         std::env::set_var("DEP_EMPTY_SCHEMA_DIR", src_folder.as_os_str());
 
         // This should succeed despite DEP_IGNORE_SCHEMA_DIR being a folder with no matches
-        let contents = process_inner(&vec![
+        let contents = process_inner(&[
             "tests/example.capnp".to_string(),
             "/folder-test/*.capnp".to_string(),
         ]);

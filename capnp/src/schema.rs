@@ -19,6 +19,7 @@ use std::sync::{atomic, Arc, LazyLock, Weak};
 #[cfg(all(feature = "std", feature = "alloc"))]
 // Builds introspection information at runtime to allow building a StructSchema
 pub struct DynamicSchema {
+    #[allow(dead_code)]
     msg: Option<Reader<OwnedSegments>>,
     scopes: HashMap<(u64, String), u64>,
     // This must never have non-weak refs to it other than this one
@@ -398,7 +399,7 @@ impl std::ops::Drop for DynamicSchema {
             use core::mem;
             unsafe {
                 assert!(
-                    mem::transmute::<_, usize>((*val as *const &T).cast::<()>()) != 0,
+                    (*val as *const &T).cast::<()>() as usize != 0,
                     "free_as_box: null ptr to {} has val {:#?}",
                     std::any::type_name::<T>(),
                     (*val as *const &T),
