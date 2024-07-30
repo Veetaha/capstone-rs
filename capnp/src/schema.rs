@@ -10,6 +10,8 @@ use crate::struct_list;
 use crate::traits::{IndexMove, ListIter, ShortListIter};
 use crate::Result;
 
+use crate::message::Reader;
+use crate::serialize::OwnedSegments;
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
 use std::sync::{atomic, Arc, LazyLock, Weak};
@@ -17,7 +19,7 @@ use std::sync::{atomic, Arc, LazyLock, Weak};
 #[cfg(all(feature = "std", feature = "alloc"))]
 // Builds introspection information at runtime to allow building a StructSchema
 pub struct DynamicSchema {
-    msg: Option<crate::message::Reader<crate::serialize::OwnedSegments>>,
+    msg: Option<Reader<OwnedSegments>>,
     scopes: HashMap<(u64, String), u64>,
     // This must never have non-weak refs to it other than this one
     // or dropping DynamicSchema will panic
@@ -267,9 +269,7 @@ impl DynamicSchema {
         Ok(())
     }
 
-    fn new_generic<S: crate::message::ReaderSegments>(
-        msg: &crate::message::Reader<S>,
-    ) -> Result<Self> {
+    fn new_generic<S: crate::message::ReaderSegments>(msg: &Reader<S>) -> Result<Self> {
         let mut scopes = HashMap::new();
         let mut node_parents = HashMap::new();
         let mut root = 0;
@@ -341,16 +341,12 @@ impl DynamicSchema {
         Ok(this)
     }
 
-    pub fn new(msg: crate::message::Reader<crate::serialize::OwnedSegments>) -> Result<Self> {
+    pub fn new<S: crate::message::ReaderSegments>(msg: crate::message::Reader<S>) -> Result<Self> {
         let mut this = Self::new_generic(&msg)?;
-        this.msg = Some(msg);
-        Ok(this)
-    }
 
-    pub fn new_ref<S: crate::message::ReaderSegments>(
-        msg: crate::message::Reader<S>,
-    ) -> Result<Self> {
-        Self::new_generic(&msg)
+        this.msg = S::reader_into_owned(msg).ok();
+
+        Ok(this)
     }
 
     pub fn get_type_by_id(&self, id: u64) -> Option<&TypeVariant> {
