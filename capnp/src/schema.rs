@@ -269,7 +269,7 @@ impl DynamicSchema {
         Ok(())
     }
 
-    fn new_generic<S: crate::message::ReaderSegments>(msg: &Reader<S>) -> Result<Self> {
+    pub fn new<S: crate::message::ReaderSegments>(msg: Reader<S>) -> Result<Self> {
         let mut scopes = HashMap::new();
         let mut node_parents = HashMap::new();
         let mut root = 0;
@@ -327,7 +327,7 @@ impl DynamicSchema {
         }
 
         let this = Self {
-            msg: None,
+            msg: S::reader_into_owned(msg).ok(),
             scopes,
             nodes: Arc::new(nodes),
             root,
@@ -337,14 +337,6 @@ impl DynamicSchema {
         // Register the weak reference in the registry after creating DynamicSchema
         // because its Drop is responsible for cleaning up the registry
         get_registry().insert(token, Arc::downgrade(&this.nodes));
-
-        Ok(this)
-    }
-
-    pub fn new<S: crate::message::ReaderSegments>(msg: crate::message::Reader<S>) -> Result<Self> {
-        let mut this = Self::new_generic(&msg)?;
-
-        this.msg = S::reader_into_owned(msg).ok();
 
         Ok(this)
     }
