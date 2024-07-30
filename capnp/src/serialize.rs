@@ -36,6 +36,7 @@ pub use no_alloc_buffer_segments::{
     NoAllocBufferSegments, NoAllocSegmentTableInfo, NoAllocSliceSegments,
 };
 
+use crate::any_pointer::Reader;
 use crate::message;
 use crate::private::units::BYTES_PER_WORD;
 use crate::Result;
@@ -202,6 +203,12 @@ impl crate::message::ReaderSegments for OwnedSegments {
 
     fn len(&self) -> usize {
         self.segment_indices.len()
+    }
+
+    fn reader_into_owned(
+        reader: crate::message::Reader<Self>,
+    ) -> std::result::Result<crate::message::Reader<Self>, crate::message::Reader<Self>> {
+        Ok(reader)
     }
 }
 
