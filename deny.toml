@@ -21,8 +21,15 @@ allow = [
 ]
 confidence-threshold = 0.8
 exceptions = [
-    { allow = ["CC0-1.0"], crate = "constant_time_eq" },
-    { allow = ["Unicode-DFS-2016"], crate = "unicode-ident" },
+    { allow = [
+        "CC0-1.0",
+    ], crate = "tiny-keccak" },
+    { allow = [
+        "CC0-1.0",
+    ], crate = "constant_time_eq" },
+    { allow = [
+        "Unicode-DFS-2016",
+    ], crate = "unicode-ident" },
 ]
 
 [licenses.private]
@@ -33,11 +40,7 @@ registries = []
 allow = []
 deny = []
 skip = []
-skip-tree = [
-    "windows-sys",
-    "regex-automata",
-    "object",
-]
+skip-tree = ["windows-sys", "regex-automata", "object"]
 
 [sources]
 unknown-registry = "warn"

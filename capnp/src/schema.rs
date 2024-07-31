@@ -11,9 +11,11 @@ use crate::traits::{IndexMove, ListIter, ShortListIter};
 use crate::Result;
 
 use crate::message::Reader;
+#[cfg(feature = "alloc")]
 use crate::serialize::OwnedSegments;
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
+#[cfg(feature = "std")]
 use std::sync::{atomic, Arc, LazyLock, Weak};
 
 #[cfg(all(feature = "std", feature = "alloc"))]
@@ -30,9 +32,11 @@ pub struct DynamicSchema {
     root: u64,
 }
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct DynamicSchemaToken(u64);
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 impl DynamicSchemaToken {
     fn new() -> Self {
         static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
@@ -47,10 +51,12 @@ impl DynamicSchemaToken {
     }
 }
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 struct DynamicSchemaRegistry {
     schemas: flurry::HashMap<DynamicSchemaToken, Weak<HashMap<u64, TypeVariant>>>,
 }
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 impl DynamicSchemaRegistry {
     fn insert(&self, token: DynamicSchemaToken, schema: Weak<HashMap<u64, TypeVariant>>) {
         self.schemas.pin().insert(token, schema);
@@ -65,14 +71,17 @@ impl DynamicSchemaRegistry {
     }
 }
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 static REGISTRY: LazyLock<DynamicSchemaRegistry> = LazyLock::new(|| DynamicSchemaRegistry {
     schemas: flurry::HashMap::new(),
 });
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 fn get_registry() -> &'static DynamicSchemaRegistry {
     &REGISTRY
 }
 
+#[cfg(all(feature = "std", feature = "alloc"))]
 fn get_type_variant(token: &DynamicSchemaToken, id: u64) -> Result<TypeVariant> {
     let hash = token.try_as_ref().ok_or(crate::Error::failed(
         "Schema token not present in registry!".into(),
@@ -83,10 +92,6 @@ fn get_type_variant(token: &DynamicSchemaToken, id: u64) -> Result<TypeVariant> 
         id
     )))?)
 }
-
-//const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
-//const PARENT_MODULE_ANNOTATION_ID: u64 = 0xabee386cd1450364;
-//const OPTION_ANNOTATION_ID: u64 = 0xabfef22c4ee1964e;
 
 #[no_mangle]
 #[inline(never)]
