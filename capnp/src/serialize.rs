@@ -206,7 +206,7 @@ impl crate::message::ReaderSegments for OwnedSegments {
 
     fn reader_into_owned(
         reader: crate::message::Reader<Self>,
-    ) -> std::result::Result<crate::message::Reader<Self>, crate::message::Reader<Self>> {
+    ) -> core::result::Result<crate::message::Reader<Self>, crate::message::Reader<Self>> {
         Ok(reader)
     }
 }

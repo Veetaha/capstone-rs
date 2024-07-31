@@ -167,9 +167,10 @@ pub trait ReaderSegments {
         self.len() == 0
     }
 
+    #[cfg(feature = "alloc")]
     fn reader_into_owned(
         reader: Reader<Self>,
-    ) -> std::result::Result<Reader<crate::serialize::OwnedSegments>, Reader<Self>>
+    ) -> core::result::Result<Reader<crate::serialize::OwnedSegments>, Reader<Self>>
     where
         Self: Sized,
     {

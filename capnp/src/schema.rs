@@ -32,7 +32,6 @@ pub struct DynamicSchema {
     root: u64,
 }
 
-#[cfg(all(feature = "std", feature = "alloc"))]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct DynamicSchemaToken(u64);
 
@@ -567,6 +566,7 @@ impl Field {
         self.proto
     }
 
+    #[cfg(all(feature = "std", feature = "alloc"))]
     fn resolve_type_reader(
         reader: &crate::schema_capnp::type_::Reader,
         token: DynamicSchemaToken,
@@ -605,6 +605,7 @@ impl Field {
     pub fn get_type(&self) -> introspect::Type {
         #[allow(clippy::fn_address_comparisons)]
         if self.parent.raw.field_types == dynamic_field_marker {
+            #[cfg(all(feature = "std", feature = "alloc"))]
             for (index, field) in self.parent.get_fields().unwrap().iter().enumerate() {
                 if index as u16 == self.index {
                     return match field.get_proto().which().unwrap() {
