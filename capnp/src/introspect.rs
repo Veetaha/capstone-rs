@@ -214,8 +214,6 @@ pub struct RawStructSchema {
 
     /// Map from discriminant value to field index.
     pub members_by_discriminant: &'static [u16],
-    // If this comes from a dynamic schema, points to the node mapping, otherwise is null.
-    //pub dynamic_schema: Option<&'static [TypeVariant]>,
     // TODO: members_by_name, allowing fast field lookup by name.
     // Indices of fields, sorted by their respective names.
     //pub members_by_name: &'static [u16],
@@ -235,6 +233,9 @@ pub struct RawBrandedStructSchema {
     /// Map from (maybe field index, annotation index) to the Type
     /// of the value held by that annotation.
     pub annotation_types: fn(Option<u16>, u32) -> Type,
+
+    // If this comes from a dynamic schema, points to the node mapping, otherwise is null.
+    pub dynamic_schema: Option<crate::schema::DynamicSchemaToken>,
 }
 
 impl core::cmp::PartialEq for RawBrandedStructSchema {

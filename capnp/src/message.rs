@@ -166,6 +166,16 @@ pub trait ReaderSegments {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    #[cfg(feature = "alloc")]
+    fn reader_into_owned(
+        reader: Reader<Self>,
+    ) -> core::result::Result<Reader<crate::serialize::OwnedSegments>, Reader<Self>>
+    where
+        Self: Sized,
+    {
+        Err(reader)
+    }
 }
 
 impl<S> ReaderSegments for &S

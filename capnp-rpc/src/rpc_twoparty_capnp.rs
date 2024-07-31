@@ -97,6 +97,7 @@ pub mod vat_id {
                 generic: &_private::RAW_SCHEMA,
                 field_types: _private::get_field_types,
                 annotation_types: _private::get_annotation_types,
+                dynamic_schema: None,
             })
             .into()
         }
@@ -140,6 +141,7 @@ pub mod vat_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -222,6 +224,7 @@ pub mod vat_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -378,6 +381,7 @@ pub mod provision_id {
                 generic: &_private::RAW_SCHEMA,
                 field_types: _private::get_field_types,
                 annotation_types: _private::get_annotation_types,
+                dynamic_schema: None,
             })
             .into()
         }
@@ -421,6 +425,7 @@ pub mod provision_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -501,6 +506,7 @@ pub mod provision_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -652,6 +658,7 @@ pub mod recipient_id {
                 generic: &_private::RAW_SCHEMA,
                 field_types: _private::get_field_types,
                 annotation_types: _private::get_annotation_types,
+                dynamic_schema: None,
             })
             .into()
         }
@@ -695,6 +702,7 @@ pub mod recipient_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -771,6 +779,7 @@ pub mod recipient_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -895,6 +904,7 @@ pub mod third_party_cap_id {
                 generic: &_private::RAW_SCHEMA,
                 field_types: _private::get_field_types,
                 annotation_types: _private::get_annotation_types,
+                dynamic_schema: None,
             })
             .into()
         }
@@ -938,6 +948,7 @@ pub mod third_party_cap_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -1014,6 +1025,7 @@ pub mod third_party_cap_id {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -1139,6 +1151,7 @@ pub mod join_key_part {
                 generic: &_private::RAW_SCHEMA,
                 field_types: _private::get_field_types,
                 annotation_types: _private::get_annotation_types,
+                dynamic_schema: None,
             })
             .into()
         }
@@ -1182,6 +1195,7 @@ pub mod join_key_part {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -1270,6 +1284,7 @@ pub mod join_key_part {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -1470,6 +1485,7 @@ pub mod join_result {
                 generic: &_private::RAW_SCHEMA,
                 field_types: _private::get_field_types,
                 annotation_types: _private::get_annotation_types,
+                dynamic_schema: None,
             })
             .into()
         }
@@ -1513,6 +1529,7 @@ pub mod join_result {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }
@@ -1605,6 +1622,7 @@ pub mod join_result {
                     generic: &_private::RAW_SCHEMA,
                     field_types: _private::get_field_types,
                     annotation_types: _private::get_annotation_types,
+                    dynamic_schema: None,
                 }),
             ))
         }

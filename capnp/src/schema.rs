@@ -10,22 +10,87 @@ use crate::struct_list;
 use crate::traits::{IndexMove, ListIter, ShortListIter};
 use crate::Result;
 
+use crate::message::Reader;
+#[cfg(feature = "alloc")]
+use crate::serialize::OwnedSegments;
 #[cfg(feature = "std")]
 use std::collections::hash_map::HashMap;
+#[cfg(feature = "std")]
+use std::sync::{atomic, Arc, LazyLock, Weak};
 
 #[cfg(all(feature = "std", feature = "alloc"))]
 // Builds introspection information at runtime to allow building a StructSchema
 pub struct DynamicSchema {
-    msg: crate::message::Reader<crate::serialize::OwnedSegments>,
+    #[allow(dead_code)]
+    msg: Option<Reader<OwnedSegments>>,
     scopes: HashMap<(u64, String), u64>,
-    node_parents: HashMap<u64, u64>,
-    nodes: HashMap<u64, TypeVariant>,
+    // This must never have non-weak refs to it other than this one
+    // or dropping DynamicSchema will panic
+    // so never expose this directly or clone it
+    nodes: Arc<HashMap<u64, TypeVariant>>,
+    token: DynamicSchemaToken,
     root: u64,
 }
 
-//const NAME_ANNOTATION_ID: u64 = 0xc2fe4c6d100166d0;
-//const PARENT_MODULE_ANNOTATION_ID: u64 = 0xabee386cd1450364;
-//const OPTION_ANNOTATION_ID: u64 = 0xabfef22c4ee1964e;
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct DynamicSchemaToken(u64);
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+impl DynamicSchemaToken {
+    fn new() -> Self {
+        static COUNTER: atomic::AtomicU64 = atomic::AtomicU64::new(0);
+        match COUNTER.fetch_add(1, atomic::Ordering::Relaxed) {
+            u64::MAX => panic!("DynamicSchemaToken counter overflow"),
+            count => Self(count),
+        }
+    }
+
+    pub fn try_as_ref(&self) -> Option<impl AsRef<HashMap<u64, TypeVariant>>> {
+        get_registry().get(self).and_then(|w| w.upgrade())
+    }
+}
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+struct DynamicSchemaRegistry {
+    schemas: flurry::HashMap<DynamicSchemaToken, Weak<HashMap<u64, TypeVariant>>>,
+}
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+impl DynamicSchemaRegistry {
+    fn insert(&self, token: DynamicSchemaToken, schema: Weak<HashMap<u64, TypeVariant>>) {
+        self.schemas.pin().insert(token, schema);
+    }
+
+    fn get(&self, token: &DynamicSchemaToken) -> Option<Weak<HashMap<u64, TypeVariant>>> {
+        self.schemas.pin().get(token).cloned()
+    }
+
+    fn remove(&self, token: &DynamicSchemaToken) {
+        self.schemas.pin().remove(token);
+    }
+}
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+static REGISTRY: LazyLock<DynamicSchemaRegistry> = LazyLock::new(|| DynamicSchemaRegistry {
+    schemas: flurry::HashMap::new(),
+});
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+fn get_registry() -> &'static DynamicSchemaRegistry {
+    &REGISTRY
+}
+
+#[cfg(all(feature = "std", feature = "alloc"))]
+fn get_type_variant(token: &DynamicSchemaToken, id: u64) -> Result<TypeVariant> {
+    let hash = token.try_as_ref().ok_or(crate::Error::failed(
+        "Schema token not present in registry!".into(),
+    ))?;
+
+    Ok(*hash.as_ref().get(&id).ok_or(crate::Error::failed(format!(
+        "Could not find type id {}",
+        id
+    )))?)
+}
 
 #[no_mangle]
 #[inline(never)]
@@ -97,6 +162,7 @@ impl DynamicSchema {
         id: u64,
         scopes: &mut HashMap<(u64, String), u64>,
         node_map: &HashMap<u64, crate::schema_capnp::node::Reader>,
+        token: DynamicSchemaToken,
     ) -> Result<()> {
         let node = &node_map[&id];
 
@@ -109,8 +175,11 @@ impl DynamicSchema {
                 // do nothing
             }
             node::Struct(st) => {
-                let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
+                // Deliberately leak these, intended to be cleaned up in DynamicSchema's Drop
+                // if we encounter an error after creating these but before the DynamicSchema is created
+                // these leak forever :(
                 let leak = Self::leak_chunk(*node, node.total_size()?)?;
+                let (nonunion_member_indexes, members_by_discriminant) = Self::get_indexes(st);
                 let raw = Box::leak(Box::new(introspect::RawStructSchema {
                     encoded_node: leak,
                     nonunion_members: nonunion_member_indexes,
@@ -121,6 +190,7 @@ impl DynamicSchema {
                     generic: raw,
                     field_types: dynamic_field_marker,
                     annotation_types: dynamic_annotation_marker,
+                    dynamic_schema: Some(token),
                 };
 
                 nodes.insert(id, TypeVariant::Struct(schema));
@@ -173,7 +243,9 @@ impl DynamicSchema {
                     crate::schema_capnp::type_::Which::Enum(_) => todo!(),
                     crate::schema_capnp::type_::Which::Struct(_) => todo!(),
                     crate::schema_capnp::type_::Which::Interface(_) => todo!(),
-                    crate::schema_capnp::type_::Which::AnyPointer(_) => todo!(),
+                    crate::schema_capnp::type_::Which::AnyPointer(_) => {
+                        nodes.insert(id, TypeVariant::AnyPointer)
+                    }
                 };
             }
             node::Annotation(_) => {
@@ -202,21 +274,19 @@ impl DynamicSchema {
         Ok(())
     }
 
-    pub fn new(msg: crate::message::Reader<crate::serialize::OwnedSegments>) -> Result<Self> {
-        let mut this = Self {
-            msg,
-            scopes: HashMap::new(),
-            node_parents: HashMap::new(),
-            nodes: HashMap::new(),
-            root: 0,
-        };
+    pub fn new<S: crate::message::ReaderSegments>(msg: Reader<S>) -> Result<Self> {
+        let mut scopes = HashMap::new();
+        let mut node_parents = HashMap::new();
+        let mut root = 0;
+        let token = DynamicSchemaToken::new();
 
-        let request: crate::schema_capnp::code_generator_request::Reader = this.msg.get_root()?;
+        let mut nodes = HashMap::new();
+        let request: crate::schema_capnp::code_generator_request::Reader = msg.get_root()?;
         let mut node_map: HashMap<u64, crate::schema_capnp::node::Reader> = HashMap::new();
 
         for node in request.get_nodes()? {
             node_map.insert(node.get_id(), node);
-            this.node_parents.insert(node.get_id(), node.get_scope_id());
+            node_parents.insert(node.get_id(), node.get_scope_id());
         }
 
         // Fix up "anonymous" method params and results scopes.
@@ -224,12 +294,12 @@ impl DynamicSchema {
             if let Ok(crate::schema_capnp::node::Interface(interface_reader)) = node.which() {
                 for method in interface_reader.get_methods()? {
                     let param_struct_type = method.get_param_struct_type();
-                    if this.node_parents.get(&param_struct_type) == Some(&0) {
-                        this.node_parents.insert(param_struct_type, node.get_id());
+                    if node_parents.get(&param_struct_type) == Some(&0) {
+                        node_parents.insert(param_struct_type, node.get_id());
                     }
                     let result_struct_type = method.get_result_struct_type();
-                    if this.node_parents.get(&result_struct_type) == Some(&0) {
-                        this.node_parents.insert(result_struct_type, node.get_id());
+                    if node_parents.get(&result_struct_type) == Some(&0) {
+                        node_parents.insert(result_struct_type, node.get_id());
                     }
                 }
             }
@@ -241,26 +311,38 @@ impl DynamicSchema {
 
             for import in requested_file.get_imports()? {
                 let import_id = import.get_id();
-                if this.node_parents.get(&import_id) == Some(&0) {
-                    this.node_parents.insert(import_id, id);
+                if node_parents.get(&import_id) == Some(&0) {
+                    node_parents.insert(import_id, id);
                 }
-                this.scopes
-                    .insert((id, import.get_name()?.to_string()?), import_id);
+                scopes.insert((id, import.get_name()?.to_string()?), import_id);
             }
         }
 
         for node in request.get_nodes()? {
-            if this.node_parents[&node.get_id()] == 0 {
-                if this.root != 0 {
-                    return Err(crate::Error::from_kind(
+            if node_parents[&node.get_id()] == 0 {
+                root = match root {
+                    0 => Ok(node.get_id()),
+                    _ => Err(crate::Error::from_kind(
                         crate::ErrorKind::MessageIsTooDeeplyNestedOrContainsCycles,
-                    ));
-                }
-                this.root = node.get_id();
+                    )),
+                }?;
             }
 
-            Self::process_node(&mut this.nodes, node.get_id(), &mut this.scopes, &node_map)?;
+            Self::process_node(&mut nodes, node.get_id(), &mut scopes, &node_map, token)?;
         }
+
+        let this = Self {
+            msg: S::reader_into_owned(msg).ok(),
+            scopes,
+            nodes: Arc::new(nodes),
+            root,
+            token,
+        };
+
+        // Register the weak reference in the registry after creating DynamicSchema
+        // because its Drop is responsible for cleaning up the registry
+        get_registry().insert(token, Arc::downgrade(&this.nodes));
+
         Ok(this)
     }
 
@@ -293,42 +375,69 @@ impl DynamicSchema {
 #[cfg(all(feature = "std", feature = "alloc"))]
 impl std::ops::Drop for DynamicSchema {
     fn drop(&mut self) {
+        // SAFETY: this Drop implementation is invalid to call if
+        // any of the refs freed via free_as_box_and_poison in nodes were not
+        // originally created from a Box
+        // If self.nodes was ever cloned this drop will panic.
+
         // To clean up our mess of memory we have to iterate through all our types
         // and start re-capturing the raw pointers into boxes, like trying to herd
         // a bunch of extremely unsafe squirrels that got loose.
 
-        for v in self.nodes.values_mut() {
+        // schema token is no longer valid as soon as we start dropping
+        get_registry().remove(&self.token);
+
+        let nodes = core::mem::replace(&mut self.nodes, Arc::new(Default::default()));
+        let mut nodes = Arc::<_>::into_inner(nodes)
+            .expect("DynamicSchema.nodes is expected to be the only strong ref");
+
+        fn free_as_box<T: ?Sized>(val: &mut &&T) {
+            // SAFETY: We're assuming that this pointer was originally created from a Box
+            // and hasn't already been freed
+            // and isn't still used anywhere (but we can't prevent that because it was in a public ref field)
+            // If any assumption is violated, this operation is undefined behavior.
+            // this is kinda UB already even if these assumptions hold
+            // because leaving a ref to freed space live is not allowed
+            // and miri test will probably screm
+            // so maybe we should just leak it forever how bad could it be
+            use core::mem;
+            unsafe {
+                assert!(
+                    (*val as *const &T).cast::<()>() as usize != 0,
+                    "free_as_box: null ptr to {} has val {:#?}",
+                    std::any::type_name::<T>(),
+                    (*val as *const &T),
+                );
+                assert!(
+                    (*val as *const &T).is_aligned(),
+                    "free_as_box: not aligned ptr to {} has val {:#?}",
+                    std::any::type_name::<T>(),
+                    (*val as *const &T),
+                );
+                assert!(
+                    *val as *const _ != mem::align_of::<&T>() as *const _,
+                    "free_as_box: already freed ptr to {} has val {:#?}",
+                    std::any::type_name::<T>(),
+                    (*val as *const &T),
+                );
+                drop(Box::from_raw((**val) as *const T as *mut T));
+                *val = &*(mem::align_of::<&T>() as *const _);
+            }
+        }
+
+        for v in nodes.values_mut() {
             match v {
                 TypeVariant::Struct(s) => {
-                    let _ = unsafe {
-                        Box::from_raw(
-                            s.generic.encoded_node as *const [crate::Word] as *mut [crate::Word],
-                        )
-                    };
-                    let _ = unsafe {
-                        Box::from_raw(
-                            s.generic.members_by_discriminant as *const [u16] as *mut [u16],
-                        )
-                    };
-                    let _ = unsafe {
-                        Box::from_raw(s.generic.nonunion_members as *const [u16] as *mut [u16])
-                    };
-                    let _ = unsafe {
-                        Box::from_raw(
-                            s.generic as *const crate::introspect::RawStructSchema
-                                as *mut crate::introspect::RawStructSchema,
-                        )
-                    };
+                    free_as_box(&mut &s.generic.encoded_node);
+                    free_as_box(&mut &s.generic.members_by_discriminant);
+                    free_as_box(&mut &s.generic.nonunion_members);
+                    free_as_box(&mut &s.generic);
                 }
                 TypeVariant::Enum(e) => {
-                    let _ = unsafe {
-                        Box::from_raw(e.encoded_node as *const [crate::Word] as *mut [crate::Word])
-                    };
+                    free_as_box(&mut &e.encoded_node);
                 }
                 TypeVariant::Capability(c) => {
-                    let _ = unsafe {
-                        Box::from_raw(c.encoded_node as *const [crate::Word] as *mut [crate::Word])
-                    };
+                    free_as_box(&mut &c.encoded_node);
                 }
                 TypeVariant::List(_) => todo!(),
                 _ => (), // do nothing unless it's something we allocated memory for
@@ -457,56 +566,68 @@ impl Field {
         self.proto
     }
 
+    #[cfg(all(feature = "std", feature = "alloc"))]
+    fn resolve_type_reader(
+        reader: &crate::schema_capnp::type_::Reader,
+        token: DynamicSchemaToken,
+    ) -> Result<TypeVariant> {
+        Ok(match reader.which()? {
+            crate::schema_capnp::type_::Which::Void(_) => TypeVariant::Void,
+            crate::schema_capnp::type_::Which::Bool(_) => TypeVariant::Bool,
+            crate::schema_capnp::type_::Which::Int8(_) => TypeVariant::Int8,
+            crate::schema_capnp::type_::Which::Int16(_) => TypeVariant::Int16,
+            crate::schema_capnp::type_::Which::Int32(_) => TypeVariant::Int32,
+            crate::schema_capnp::type_::Which::Int64(_) => TypeVariant::Int64,
+            crate::schema_capnp::type_::Which::Uint8(_) => TypeVariant::UInt8,
+            crate::schema_capnp::type_::Which::Uint16(_) => TypeVariant::UInt16,
+            crate::schema_capnp::type_::Which::Uint32(_) => TypeVariant::UInt32,
+            crate::schema_capnp::type_::Which::Uint64(_) => TypeVariant::UInt64,
+            crate::schema_capnp::type_::Which::Float32(_) => TypeVariant::Float32,
+            crate::schema_capnp::type_::Which::Float64(_) => TypeVariant::Float64,
+            crate::schema_capnp::type_::Which::Text(_) => TypeVariant::Text,
+            crate::schema_capnp::type_::Which::Data(_) => TypeVariant::Data,
+            crate::schema_capnp::type_::Which::AnyPointer(_) => TypeVariant::AnyPointer,
+            crate::schema_capnp::type_::Which::List(r) => {
+                TypeVariant::List(Self::resolve_type_reader(&r.get_element_type()?, token)?.into())
+            }
+            crate::schema_capnp::type_::Which::Enum(r) => {
+                get_type_variant(&token, r.get_type_id())?
+            }
+            crate::schema_capnp::type_::Which::Struct(r) => {
+                get_type_variant(&token, r.get_type_id())?
+            }
+            crate::schema_capnp::type_::Which::Interface(r) => {
+                get_type_variant(&token, r.get_type_id())?
+            }
+        })
+    }
+
     pub fn get_type(&self) -> introspect::Type {
         #[allow(clippy::fn_address_comparisons)]
         if self.parent.raw.field_types == dynamic_field_marker {
-            let mut found: Option<crate::schema_capnp::type_::Reader> = None;
+            #[cfg(all(feature = "std", feature = "alloc"))]
             for (index, field) in self.parent.get_fields().unwrap().iter().enumerate() {
                 if index as u16 == self.index {
-                    found = match field.get_proto().which().unwrap() {
-                        field::Slot(slot) => slot.get_type().ok(),
-                        field::Group(_) => {
-                            // group.get_type_id() // need access to type mapping to find group's type node
-                            panic!("don't know how to do groups yet");
+                    return match field.get_proto().which().unwrap() {
+                        field::Slot(slot) => Self::resolve_type_reader(
+                            &slot.get_type().unwrap(),
+                            self.parent.raw.dynamic_schema.unwrap(),
+                        )
+                        .unwrap(),
+                        field::Group(group) => {
+                            let token = self.parent.raw.dynamic_schema.unwrap();
+                            let variant = get_type_variant(&token, group.get_type_id()).unwrap();
+                            match variant {
+                                TypeVariant::Struct(s) => TypeVariant::Struct(s),
+                                _ => panic!("Found group type that wasn't a struct"),
+                            }
                         }
-                    };
+                    }
+                    .into();
                 }
             }
 
-            // If anything goes wrong we have to panic anyway
-            match found.unwrap().which().unwrap() {
-                crate::schema_capnp::type_::Which::Void(_) => introspect::TypeVariant::Void,
-                crate::schema_capnp::type_::Which::Bool(_) => introspect::TypeVariant::Bool,
-                crate::schema_capnp::type_::Which::Int8(_) => introspect::TypeVariant::Int8,
-                crate::schema_capnp::type_::Which::Int16(_) => introspect::TypeVariant::Int16,
-                crate::schema_capnp::type_::Which::Int32(_) => introspect::TypeVariant::Int32,
-                crate::schema_capnp::type_::Which::Int64(_) => introspect::TypeVariant::Int64,
-                crate::schema_capnp::type_::Which::Uint8(_) => introspect::TypeVariant::UInt8,
-                crate::schema_capnp::type_::Which::Uint16(_) => introspect::TypeVariant::UInt16,
-                crate::schema_capnp::type_::Which::Uint32(_) => introspect::TypeVariant::UInt32,
-                crate::schema_capnp::type_::Which::Uint64(_) => introspect::TypeVariant::UInt64,
-                crate::schema_capnp::type_::Which::Float32(_) => introspect::TypeVariant::Float32,
-                crate::schema_capnp::type_::Which::Float64(_) => introspect::TypeVariant::Float64,
-                crate::schema_capnp::type_::Which::Text(_) => introspect::TypeVariant::Text,
-                crate::schema_capnp::type_::Which::Data(_) => introspect::TypeVariant::Data,
-                crate::schema_capnp::type_::Which::List(_) => {
-                    todo!();
-                }
-                crate::schema_capnp::type_::Which::Enum(_) => TypeVariant::Enum(RawEnumSchema {
-                    encoded_node: &[],
-                    annotation_types: dynamic_annotation_marker,
-                }),
-                crate::schema_capnp::type_::Which::Struct(_) => {
-                    todo!();
-                }
-                crate::schema_capnp::type_::Which::Interface(_) => {
-                    TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
-                }
-                crate::schema_capnp::type_::Which::AnyPointer(_) => {
-                    introspect::TypeVariant::AnyPointer
-                }
-            }
-            .into()
+            panic!("Could not find type!");
         } else {
             (self.parent.raw.field_types)(self.index)
         }
@@ -784,20 +905,20 @@ impl AnnotationList {
             (self.get_annotation_type)(self.child_index, index)
         } else {
             match proto.get_value().unwrap().which().unwrap() {
-                crate::schema_capnp::value::Which::Void(_) => introspect::TypeVariant::Void,
-                crate::schema_capnp::value::Which::Bool(_) => introspect::TypeVariant::Bool,
-                crate::schema_capnp::value::Which::Int8(_) => introspect::TypeVariant::Int8,
-                crate::schema_capnp::value::Which::Int16(_) => introspect::TypeVariant::Int16,
-                crate::schema_capnp::value::Which::Int32(_) => introspect::TypeVariant::Int32,
-                crate::schema_capnp::value::Which::Int64(_) => introspect::TypeVariant::Int64,
-                crate::schema_capnp::value::Which::Uint8(_) => introspect::TypeVariant::UInt8,
-                crate::schema_capnp::value::Which::Uint16(_) => introspect::TypeVariant::UInt16,
-                crate::schema_capnp::value::Which::Uint32(_) => introspect::TypeVariant::UInt32,
-                crate::schema_capnp::value::Which::Uint64(_) => introspect::TypeVariant::UInt64,
-                crate::schema_capnp::value::Which::Float32(_) => introspect::TypeVariant::Float32,
-                crate::schema_capnp::value::Which::Float64(_) => introspect::TypeVariant::Float64,
-                crate::schema_capnp::value::Which::Text(_) => introspect::TypeVariant::Text,
-                crate::schema_capnp::value::Which::Data(_) => introspect::TypeVariant::Data,
+                crate::schema_capnp::value::Which::Void(_) => TypeVariant::Void,
+                crate::schema_capnp::value::Which::Bool(_) => TypeVariant::Bool,
+                crate::schema_capnp::value::Which::Int8(_) => TypeVariant::Int8,
+                crate::schema_capnp::value::Which::Int16(_) => TypeVariant::Int16,
+                crate::schema_capnp::value::Which::Int32(_) => TypeVariant::Int32,
+                crate::schema_capnp::value::Which::Int64(_) => TypeVariant::Int64,
+                crate::schema_capnp::value::Which::Uint8(_) => TypeVariant::UInt8,
+                crate::schema_capnp::value::Which::Uint16(_) => TypeVariant::UInt16,
+                crate::schema_capnp::value::Which::Uint32(_) => TypeVariant::UInt32,
+                crate::schema_capnp::value::Which::Uint64(_) => TypeVariant::UInt64,
+                crate::schema_capnp::value::Which::Float32(_) => TypeVariant::Float32,
+                crate::schema_capnp::value::Which::Float64(_) => TypeVariant::Float64,
+                crate::schema_capnp::value::Which::Text(_) => TypeVariant::Text,
+                crate::schema_capnp::value::Which::Data(_) => TypeVariant::Data,
                 crate::schema_capnp::value::Which::List(_) => {
                     todo!();
                 }
@@ -811,9 +932,7 @@ impl AnnotationList {
                 crate::schema_capnp::value::Which::Interface(_) => {
                     TypeVariant::Capability(RawCapabilitySchema { encoded_node: &[] })
                 }
-                crate::schema_capnp::value::Which::AnyPointer(_) => {
-                    introspect::TypeVariant::AnyPointer
-                }
+                crate::schema_capnp::value::Which::AnyPointer(_) => TypeVariant::AnyPointer,
             }
             .into()
         };
