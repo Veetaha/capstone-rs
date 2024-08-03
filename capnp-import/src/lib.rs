@@ -74,6 +74,18 @@ fn process_inner(path_patterns: &[impl AsRef<str>]) -> Result<TokenStream2> {
         })
         .collect();
 
+    for (key, value) in std::env::vars() {
+        if key.starts_with("DEP_") && key.ends_with("_SCHEMA_PROVIDES") {
+            let name = key
+                .strip_prefix("DEP_")
+                .unwrap()
+                .strip_suffix("_SCHEMA_PROVIDES")
+                .unwrap()
+                .to_ascii_lowercase();
+            cmd.crate_provides(name, value.split(',').map(|id| id.parse::<u64>().unwrap()));
+        }
+    }
+
     let manifest: [PathBuf; 1] = [PathBuf::from_str(&std::env::var("CARGO_MANIFEST_DIR")?)?];
 
     let glob_matches = path_patterns
