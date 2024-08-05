@@ -2725,7 +2725,7 @@ pub type CapTable = Vec<Option<Box<dyn ClientHook>>>;
 #[cfg(not(feature = "alloc"))]
 pub struct CapTable;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum CapTableReader {
     // At one point, we had a `Dummy` variant here, but that ended up
     // making values of this type take 16 bytes of memory. Now we instead
@@ -3397,6 +3397,31 @@ pub struct StructReader<'a> {
     data_size: BitCount32,
     pointer_count: WirePointerCount16,
     nesting_limit: i32,
+}
+
+impl<'a> core::fmt::Debug for StructReader<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = format!("{:?}", self.arena);
+        f.write_fmt(format_args!(
+            "arena: {}
+        cap_table: {:?}
+        data: {:?}
+        pointers: {:?}
+        segment_id: {}
+        data_size: {}
+        pointer_count: {}
+        nesting_limit: {}
+        ",
+            s,
+            self.cap_table,
+            self.data,
+            self.pointers,
+            self.segment_id,
+            self.data_size,
+            self.pointer_count,
+            self.nesting_limit
+        ))
+    }
 }
 
 impl<'a> StructReader<'a> {

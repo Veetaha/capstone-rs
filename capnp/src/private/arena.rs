@@ -52,6 +52,21 @@ pub trait ReaderArena {
     //   layout::StructReader, layout::ListReader, etc. could drop their `cap_table` fields.
 }
 
+impl core::fmt::Debug for dyn ReaderArena {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut id = 0;
+        loop {
+            if let Ok((p, len)) = self.get_segment(id) {
+                f.write_fmt(format_args!("Segment {}: {:?} ({} bytes)", id, p, len))?;
+            } else {
+                break;
+            }
+            id = id + 1
+        }
+        f.write_fmt(format_args!("Nesting Limit: {}", self.nesting_limit()))
+    }
+}
+
 pub struct ReaderArenaImpl<S> {
     segments: S,
     read_limiter: ReadLimiter,
