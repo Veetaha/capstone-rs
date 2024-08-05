@@ -52,7 +52,7 @@ pub trait ReaderArena {
     //   layout::StructReader, layout::ListReader, etc. could drop their `cap_table` fields.
 }
 
-impl core::fmt::Debug for dyn ReaderArena {
+impl<'a> core::fmt::Debug for dyn ReaderArena + 'a {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut id = 0;
         loop {
